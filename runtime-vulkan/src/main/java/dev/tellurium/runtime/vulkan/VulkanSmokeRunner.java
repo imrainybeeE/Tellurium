@@ -77,7 +77,10 @@ public final class VulkanSmokeRunner {
                 var application = VkApplicationInfo.calloc(stack).sType$Default()
                         .pApplicationName(stack.UTF8("Tellurium synthetic replay"))
                         .applicationVersion(VK_MAKE_VERSION(0, 1, 0)).apiVersion(VK_MAKE_VERSION(1, 2, 0));
-                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application);
+                var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack);
+                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application)
+                        .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
+                        .ppEnabledExtensionNames(portabilityInstance);
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateInstance(create, null, out), "vkCreateInstance");
                 instance = new VkInstance(out.get(0), create);
@@ -123,7 +126,8 @@ public final class VulkanSmokeRunner {
                 var queues = VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(queueFamily).pQueuePriorities(stack.floats(1));
                 var features = VkPhysicalDeviceFeatures.calloc(stack).shaderFloat64(true);
-                var create = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(features);
+                var create = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(features)
+                        .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(physical, stack));
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateDevice(physical, create, null, out), "vkCreateDevice");
                 device = new VkDevice(out.get(0), physical, create);

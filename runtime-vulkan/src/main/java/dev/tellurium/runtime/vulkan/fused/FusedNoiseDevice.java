@@ -119,7 +119,10 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var app = VkApplicationInfo.calloc(stack).sType$Default()
                     .pApplicationName(stack.UTF8("Tellurium")).apiVersion(VK12.VK_API_VERSION_1_2);
-            var instanceInfo = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(app);
+            var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack);
+            var instanceInfo = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(app)
+                    .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
+                    .ppEnabledExtensionNames(portabilityInstance);
             PointerBuffer pointer = stack.mallocPointer(1);
             check(vkCreateInstance(instanceInfo, null, pointer), "vkCreateInstance");
             VkInstance instance = new VkInstance(pointer.get(0), instanceInfo);
@@ -153,7 +156,8 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 var queues = VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(bestFamily).pQueuePriorities(stack.floats(1.0f));
                 var enabled = VkPhysicalDeviceFeatures.calloc(stack).shaderFloat64(true).shaderInt64(true);
-                var deviceInfo = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(enabled);
+                var deviceInfo = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(enabled)
+                        .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(best, stack));
                 check(vkCreateDevice(best, deviceInfo, null, pointer), "vkCreateDevice");
                 VkDevice device = new VkDevice(pointer.get(0), best, deviceInfo);
                 long pool = VK_NULL_HANDLE;

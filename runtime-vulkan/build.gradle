@@ -7,6 +7,20 @@ dependencies {
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-windows'
     runtimeOnly 'org.lwjgl:lwjgl::natives-linux'
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-linux'
+    runtimeOnly 'org.lwjgl:lwjgl::natives-macos-arm64'
+    runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-macos-arm64'
+    // Carries libMoltenVK.dylib, the Vulkan implementation on macOS.
+    runtimeOnly 'org.lwjgl:lwjgl-vulkan::natives-macos-arm64'
+}
+
+tasks.register('nativeDeviceProbe', JavaExec) {
+    group = 'verification'
+    description = 'Opt-in G0 probe: lists Vulkan devices with the properties, limits and extensions the integer profile needs.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    mainClass = 'dev.tellurium.runtime.vulkan.NativeDeviceProbe'
+    args "--output=${layout.buildDirectory.file('reports/native-device-probe.json').get().asFile.absolutePath}"
 }
 
 tasks.register('nativeIntegerIeeeCompile', JavaExec) {
@@ -28,6 +42,7 @@ tasks.register('nativeIntegerIeee', JavaExec) {
     args "--output=${layout.buildDirectory.file('reports/native-integer-ieee.json').get().asFile.absolutePath}"
     if (providers.gradleProperty('tellurium.ieeeRelease').map { it == 'true' }.orElse(false).get()) args '--release'
     if (providers.gradleProperty('tellurium.ieeeArithmeticOnly').map { it == 'true' }.orElse(false).get()) args '--arithmetic-only'
+    if (providers.gradleProperty('tellurium.ieeeHostNanSignAgnostic').map { it == 'true' }.orElse(false).get()) args '--host-nan-sign-agnostic'
 }
 
 tasks.register('nativeWorldgenSmoke', JavaExec) {

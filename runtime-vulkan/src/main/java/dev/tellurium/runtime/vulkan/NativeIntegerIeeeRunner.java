@@ -126,6 +126,14 @@ import static org.lwjgl.vulkan.VK11.vkGetPhysicalDeviceProperties2;
 public final class NativeIntegerIeeeRunner {
     private static final int LOCAL_SIZE = 64;
     private static final long FENCE_TIMEOUT_NANOS = 10_000_000_000L;
+    /**
+     * Diagnostic only (--host-nan-sign-agnostic): Java leaves the sign and payload of a freshly generated NaN
+     * unspecified and the host CPU decides (x86 yields 0xfff8..., AArch64 yields 0x7ff8...), so a captured
+     * reference computed on the host JVM can differ from the device in the NaN sign bit alone. Off by default;
+     * the strict raw-bit comparison is the qualification gate.
+     */
+    private static boolean nanSignAgnostic;
+    private static int nanSignDifferences;
 
     private NativeIntegerIeeeRunner() {}
 
@@ -133,6 +141,7 @@ public final class NativeIntegerIeeeRunner {
         String source = shaderSource();
         boolean release = hasFlag(args, "--release");
         boolean arithmeticOnly = hasFlag(args, "--arithmetic-only");
+        nanSignAgnostic = hasFlag(args, "--host-nan-sign-agnostic");
         int binaryVectorCount = release ? 1_024 : 320;
         int unaryVectorCount = release ? 1_000_000 : 100_000;
         int rngVectorCount = release ? 1_000_000 : 100_000;
@@ -207,8 +216,9 @@ public final class NativeIntegerIeeeRunner {
             String sourceHash = Hashes.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             String spirvHash = Hashes.sha256(spirv);
             String report = report(session.name(), sourceHash, spirvHash, comparisons, operationCounts,
-                    arithmeticOnly ? (release ? "release-arithmetic-only" : "arithmetic-only")
-                            : (release ? "release" : "qualification"));
+                    (arithmeticOnly ? (release ? "release-arithmetic-only" : "arithmetic-only")
+                            : (release ? "release" : "qualification"))
+                            + (nanSignAgnostic ? "-host-nan-sign-agnostic" : ""));
             String output = outputPath(args);
             if (output != null) {
                 Path reportPath = Path.of(output).toAbsolutePath().normalize();
@@ -218,8 +228,19 @@ public final class NativeIntegerIeeeRunner {
             }
             System.out.println("nativeIntegerIeee DEVICE_PASS device=" + session.name()
                     + " comparisons=" + comparisons + " sourceSha256=" + sourceHash
+                    + (nanSignAgnostic ? " nanSignDifferences=" + nanSignDifferences : "")
                     + (output == null ? "" : " report=" + Path.of(output).toAbsolutePath().normalize()));
         }
+    }
+
+    private static boolean capturedBitsMatch(long expectedBits, long actualBits) {
+        if (expectedBits == actualBits) return true;
+        if (nanSignAgnostic && Double.isNaN(Double.longBitsToDouble(expectedBits))
+                && Double.isNaN(Double.longBitsToDouble(actualBits))) {
+            nanSignDifferences++;
+            return true;
+        }
+        return false;
     }
 
     private static String outputPath(String[] args) {
@@ -247,7 +268,9 @@ public final class NativeIntegerIeeeRunner {
                 .append("  \"sourceSha256\": \"").append(sourceHash).append("\",\n")
                 .append("  \"spirvSha256\": \"").append(spirvHash).append("\",\n")
                 .append("  \"comparisons\": ").append(comparisons).append(",\n")
-                .append("  \"mismatches\": 0,\n  \"operations\": {");
+                .append("  \"mismatches\": 0,\n")
+                .append(nanSignAgnostic ? "  \"nanSignDifferences\": " + nanSignDifferences + ",\n" : "")
+                .append("  \"operations\": {");
         for (int i = 0; i < names.length; i++) {
             if (i > 0) json.append(',');
             json.append("\n    \"").append(names[i]).append("\": ").append(operationCounts[i]);
@@ -383,7 +406,7 @@ public final class NativeIntegerIeeeRunner {
                     | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
             int x = input[i * 4], y = input[i * 4 + 1], z = input[i * 4 + 2];
             long expectedBits = Double.doubleToRawLongBits(capturedNoiseExpected(x, y, z));
-            if (actualBits != expectedBits) {
+            if (!capturedBitsMatch(expectedBits, actualBits)) {
                 throw new IllegalStateException("captured NormalNoise mismatch index=" + i
                         + " point=" + x + "," + y + "," + z
                         + " expected=0x" + Long.toHexString(expectedBits)
@@ -421,7 +444,7 @@ public final class NativeIntegerIeeeRunner {
                     | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
             int x = input[i * 4], z = input[i * 4 + 2];
             long expectedBits = Double.doubleToRawLongBits(capturedEndIslandExpected(parameters, x, z));
-            if (actualBits != expectedBits) {
+            if (!capturedBitsMatch(expectedBits, actualBits)) {
                 throw new IllegalStateException("captured End-island mismatch index=" + i
                         + " point=" + x + "," + z
                         + " expected=0x" + Long.toHexString(expectedBits)
@@ -493,7 +516,7 @@ public final class NativeIntegerIeeeRunner {
                 long expectedBits = Double.doubleToRawLongBits(expected);
                 long actualBits = Integer.toUnsignedLong(actual[i * 6])
                         | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
-                if (actualBits != expectedBits) {
+                if (!capturedBitsMatch(expectedBits, actualBits)) {
                     throw new IllegalStateException("captured " + mapper + " weird-scaled mismatch index=" + i
                             + " point=" + x + "," + y + "," + z
                             + " expected=0x" + Long.toHexString(expectedBits)
@@ -1072,7 +1095,10 @@ public final class NativeIntegerIeeeRunner {
                         .pApplicationName(stack.UTF8("Tellurium synthetic replay"))
                         .applicationVersion(VK10.VK_MAKE_VERSION(0, 1, 0))
                         .apiVersion(VK10.VK_MAKE_VERSION(1, 2, 0));
-                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application);
+                var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack);
+                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application)
+                        .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
+                        .ppEnabledExtensionNames(portabilityInstance);
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateInstance(create, null, out), "vkCreateInstance");
                 instance = new VkInstance(out.get(0), create);
@@ -1112,7 +1138,8 @@ public final class NativeIntegerIeeeRunner {
                 var queues = org.lwjgl.vulkan.VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(queueFamily).pQueuePriorities(stack.floats(1.0f));
                 var create = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues)
-                        .pEnabledFeatures(VkPhysicalDeviceFeatures.calloc(stack));
+                        .pEnabledFeatures(VkPhysicalDeviceFeatures.calloc(stack))
+                        .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(physical, stack));
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateDevice(physical, create, null, out), "vkCreateDevice(integer profile)");
                 device = new VkDevice(out.get(0), physical, create);
