@@ -233,7 +233,7 @@ public final class ChunkThroughputBenchmark {
         java.util.function.IntConsumer request = index -> {
             ChunkPos pos = order.get(index);
             CompletableFuture<?> done = futures[index];
-            cache.getChunkFuture(pos.x, pos.z, settings.status(), true).handle((result, error) -> {
+            cache.getChunkFuture(Version.chunkX(pos), Version.chunkZ(pos), settings.status(), true).handle((result, error) -> {
                 if (error == null && result != null && result.isSuccess()) {
                     completed.incrementAndGet();
                     if (completionDigests != null) completionDigests[index] = ChunkDigest.line(level, result.orElse(null));
@@ -310,7 +310,7 @@ public final class ChunkThroughputBenchmark {
             StringBuilder text = new StringBuilder();
             for (int i = 0; i < completionDigests.length; i++) {
                 ChunkPos pos = order.get(i);
-                text.append(completionDigests[i] == null ? pos.x + " " + pos.z + " MISSING" : completionDigests[i]).append(System.lineSeparator());
+                text.append(completionDigests[i] == null ? Version.chunkX(pos) + " " + Version.chunkZ(pos) + " MISSING" : completionDigests[i]).append(System.lineSeparator());
             }
             Path digestPath = settings.output().resolveSibling(settings.output().getFileName().toString()
                     .replaceFirst("[.]json$", "") + ".digest.txt");
@@ -555,8 +555,8 @@ public final class ChunkThroughputBenchmark {
             StringBuilder text = new StringBuilder();
             java.util.Map<String, Integer> coverage = new java.util.TreeMap<>();
             for (ChunkPos pos : order) {
-                var chunk = cache.getChunk(pos.x, pos.z, settings.status(), false);
-                text.append(chunk == null ? pos.x + " " + pos.z + " MISSING" : ChunkDigest.line(level, chunk)).append(System.lineSeparator());
+                var chunk = cache.getChunk(Version.chunkX(pos), Version.chunkZ(pos), settings.status(), false);
+                text.append(chunk == null ? Version.chunkX(pos) + " " + Version.chunkZ(pos) + " MISSING" : ChunkDigest.line(level, chunk)).append(System.lineSeparator());
                 if (chunk != null) for (String biome : ChunkDigest.biomeNames(chunk)) coverage.merge(biome, 1, Integer::sum);
             }
             LOG.info("Tellurium benchmark biome coverage (chunks containing each biome): {}", coverage);
@@ -589,10 +589,10 @@ public final class ChunkThroughputBenchmark {
         List<ChunkPos> out = new ArrayList<>(side * side);
         int centreTile = (tilesPerAxis - 1) / 2;
         for (ChunkPos tile : spiral(centreTile, centreTile, tilesPerAxis)) {
-            if (tile.x < 0 || tile.z < 0 || tile.x >= tilesPerAxis || tile.z >= tilesPerAxis) continue;
+            if (Version.chunkX(tile) < 0 || Version.chunkZ(tile) < 0 || Version.chunkX(tile) >= tilesPerAxis || Version.chunkZ(tile) >= tilesPerAxis) continue;
             for (int dz = 0; dz < tileSize; dz++) {
                 for (int dx = 0; dx < tileSize; dx++) {
-                    int x = tile.x * tileSize + dx, z = tile.z * tileSize + dz;
+                    int x = Version.chunkX(tile) * tileSize + dx, z = Version.chunkZ(tile) * tileSize + dz;
                     if (x < side && z < side) out.add(new ChunkPos(minX + x, minZ + z));
                 }
             }

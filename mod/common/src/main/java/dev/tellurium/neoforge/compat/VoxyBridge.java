@@ -240,7 +240,7 @@ public final class VoxyBridge {
             if (room <= 0) return;
             int reach = (RADIUS + TILE - 1) / TILE;
             for (ServerPlayer player : level.players()) {
-                int centreX = player.chunkPosition().x >> TILE_SHIFT, centreZ = player.chunkPosition().z >> TILE_SHIFT;
+                int centreX = Version.chunkX(player.chunkPosition()) >> TILE_SHIFT, centreZ = Version.chunkZ(player.chunkPosition()) >> TILE_SHIFT;
                 for (int ring = 0; ring <= reach && room > 0; ring++) {
                     for (int dz = -ring; dz <= ring && room > 0; dz++) {
                         boolean edge = dz == -ring || dz == ring;

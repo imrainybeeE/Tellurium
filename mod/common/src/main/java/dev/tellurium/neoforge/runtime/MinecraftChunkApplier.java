@@ -171,7 +171,7 @@ public final class MinecraftChunkApplier {
                     + target.getPersistedStatus().getName());
         }
         ChunkPos position = target.getPos();
-        if (position.x != result.header().chunkX() || position.z != result.header().chunkZ()) {
+        if (Version.chunkX(position) != result.header().chunkX() || Version.chunkZ(position) != result.header().chunkZ()) {
             throw new IllegalArgumentException("Chunk coordinate mismatch at application boundary");
         }
         if (Version.minY(target) != result.header().minY()
@@ -391,8 +391,8 @@ public final class MinecraftChunkApplier {
         var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (key == null || !descriptor.name().equals(key.toString())) return false;
         Map<String, String> actual = new HashMap<>();
-        for (var entry : state.getValues().entrySet()) {
-            actual.put(entry.getKey().getName(), propertyName(entry.getKey(), entry.getValue()));
+        for (Property<?> property : state.getProperties()) {
+            actual.put(property.getName(), propertyName(property, state.getValue(property)));
         }
         return descriptor.properties().equals(actual);
     }

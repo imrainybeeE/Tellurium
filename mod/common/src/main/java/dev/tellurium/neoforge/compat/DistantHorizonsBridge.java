@@ -636,7 +636,7 @@ public final class DistantHorizonsBridge {
                 if (inside && handover != null && !LOD_ONLY) handover.handingOver(pos);
                 // The ticket is this tile's own, so that a neighbouring tile letting go does not release it.
                 server.execute(() -> TICKET.add(cache, pos, TICKET_RADIUS, corner));
-                CompletableFuture<ChunkAccess> chunk = cache.getChunkFuture(pos.x, pos.z, STATUS, true).thenApply(result -> {
+                CompletableFuture<ChunkAccess> chunk = cache.getChunkFuture(Version.chunkX(pos), Version.chunkZ(pos), STATUS, true).thenApply(result -> {
                     ChunkAccess generated = result.orElse(null);
                     if (generated == null) {
                         throw new IllegalStateException("chunk " + pos + " was not generated: " + result.getError());

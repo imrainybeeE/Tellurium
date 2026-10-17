@@ -10,6 +10,7 @@ gradle.ext.modVersions = [
     '1.21.4' : ['1.21.4'],
     '1.21.8' : ['1.21.8', '1.21.4'],
     '1.21.11': ['1.21.11', '1.21.8', '1.21.4'],
+    '26.1.2' : ['26.1.2', '1.21.11', '1.21.8', '1.21.4'],
 ]
 gradle.ext.modTargets = [
     // diagnostics: the GameTests, the unit tests and the early replay tasks live with this one build.
@@ -21,5 +22,7 @@ gradle.ext.modTargets = [
     'fabric-12111'  : [loader: 'fabric',   minecraft: '1.21.11', fabricApi: '0.141.6+1.21.11'],
     // NeoForge 21.11 has no additional runtime classpath for development runs.
     'neoforge-12111': [loader: 'neoforge', minecraft: '1.21.11', neoforge: '21.11.45', additionalClasspath: false],
+    // 26.1 is not obfuscated: its Fabric builds use mod/fabric-unobfuscated.gradle (no mappings, no remapping).
+    'fabric-2612'   : [loader: 'fabric', script: 'fabric-unobfuscated', minecraft: '26.1.2', fabricApi: '0.155.3+26.1.2'],
 ]
 gradle.ext.fabricLoader = '0.19.5'

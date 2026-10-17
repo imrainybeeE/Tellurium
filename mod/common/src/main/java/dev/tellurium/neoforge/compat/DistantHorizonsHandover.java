@@ -132,19 +132,19 @@ final class DistantHorizonsHandover {
 
     /** Any thread.  Asks Distant Horizons to ignore this chunk's own events until it has been saved once. */
     void handingOver(ChunkPos pos) {
-        if (nearPlayer(pos.x, pos.z)) return;
+        if (nearPlayer(Version.chunkX(pos), Version.chunkZ(pos))) return;
         // A chunk the server already has loaded has had its load event, and may never be saved again.
-        LightChunk loaded = level.getChunkSource().getChunkForLighting(pos.x, pos.z);
+        LightChunk loaded = level.getChunkSource().getChunkForLighting(Version.chunkX(pos), Version.chunkZ(pos));
         if (loaded instanceof LevelChunk || loaded instanceof ImposterProtoChunk) return;
         if (ignored.put(pos.toLong(), System.nanoTime() + LONGEST_NANOS) == null) {
-            if (change(ignore, pos.x, pos.z)) SKIPPED.incrementAndGet();
+            if (change(ignore, Version.chunkX(pos), Version.chunkZ(pos))) SKIPPED.incrementAndGet();
             else ignored.remove(pos.toLong());
         }
     }
 
     /** Any thread.  The chunk could not be handed over after all. */
     void notHandedOver(ChunkPos pos) {
-        if (ignored.remove(pos.toLong()) != null) change(unignore, pos.x, pos.z);
+        if (ignored.remove(pos.toLong()) != null) change(unignore, Version.chunkX(pos), Version.chunkZ(pos));
     }
 
     private boolean nearPlayer(int x, int z) {

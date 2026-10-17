@@ -45,7 +45,7 @@ public final class FastSurfaceState {
     private static final boolean INJECT_DIFFERENCE = Boolean.getBoolean("tellurium.fast.checkInjectDifference");
 
     static void expect(ChunkAccess chunk, byte[] data, int[] heights, BlockState[] palette) {
-        if (INJECT_DIFFERENCE && (chunk.getPos().x & 7) == 0) data[0] ^= 1;
+        if (INJECT_DIFFERENCE && (Version.chunkX(chunk.getPos()) & 7) == 0) data[0] ^= 1;
         EXPECTED.put(chunk, new Expected(data, heights, palette));
     }
 
