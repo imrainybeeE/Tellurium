@@ -28,6 +28,7 @@ public abstract class ChunkStatusTasksMixin {
             StaticCache2D<GenerationChunkHolder> cache,
             ChunkAccess chunk,
             CallbackInfoReturnable<CompletableFuture<ChunkAccess>> callback) {
+        dev.tellurium.neoforge.bench.ChunkThroughputBenchmark.NOISE_STEPS.incrementAndGet();
         StagedRoute.HookResult result = StagedRoute.interceptNoise(context, step, cache, chunk);
         if (result.action() != StagedRoute.HookAction.BYPASS) {
             callback.setReturnValue(result.future());

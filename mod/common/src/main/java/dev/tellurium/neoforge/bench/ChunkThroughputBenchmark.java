@@ -38,6 +38,11 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class ChunkThroughputBenchmark {
     private static final Logger LOG = LoggerFactory.getLogger("tellurium-bench");
+    /**
+     * NOISE steps the game started in this process, whoever then generates the terrain (GPU, CPU or vanilla):
+     * a reopened world that generated nothing again has none.  Counted by mixin/ChunkStatusTasksMixin.
+     */
+    public static final java.util.concurrent.atomic.AtomicLong NOISE_STEPS = new java.util.concurrent.atomic.AtomicLong();
     private static final Version.Ticket BENCH_TICKET = Version.ticket("tellurium_bench");
 
     public record Settings(ChunkStatus status, int radiusChunks, int warmupRadiusChunks,
@@ -189,10 +194,10 @@ public final class ChunkThroughputBenchmark {
                 + "  \"note\": \"Wall-clock interval from first measured request to last completion; compilation is not subtracted.\"\n"
                 + "}\n";
         writeQuietly(settings.output(), report);
-        LOG.info("Tellurium benchmark {}: {} {} chunks in {} ms = {} cps (failed={})",
+        LOG.info("Tellurium benchmark {}: {} {} chunks in {} ms = {} cps (failed={}) noiseSteps={}",
                 pass ? "PASS" : "FAIL", measured.completed(), settings.status(),
                 TimeUnit.NANOSECONDS.toMillis(measured.elapsedNanos()),
-                String.format(Locale.ROOT, "%.2f", measured.chunksPerSecond()), measured.failed());
+                String.format(Locale.ROOT, "%.2f", measured.chunksPerSecond()), measured.failed(), NOISE_STEPS.get());
     }
 
     private Phase generateSquare(int centerX, int centerZ, int radius, String label, boolean digest)

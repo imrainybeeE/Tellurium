@@ -42,6 +42,9 @@ loom {
             }
             def maxHeap = System.getProperty('tellurium.run.maxHeap', '').trim()
             if (!maxHeap.isEmpty()) vmArg "-Xmx${maxHeap}"
+            // -Dtellurium.run.jvmArgs='<args>': more JVM arguments for the game (as in mod/neoforge.gradle).
+            def extraJvmArgs = System.getProperty('tellurium.run.jvmArgs', '').trim()
+            if (!extraJvmArgs.isEmpty()) extraJvmArgs.split(/\s+/).each { vmArg it }
             vmArg '-Dorg.lwjgl.system.stackSize=16384'
             def directory = System.getProperty('tellurium.candidate.runDir', '').trim()
             if (!directory.isEmpty()) runDir = project.projectDir.toPath().relativize(new File(directory).toPath()).toString().replace(File.separator, '/')
