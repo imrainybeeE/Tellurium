@@ -45,6 +45,20 @@ tasks.register('nativeIntegerIeee', JavaExec) {
     if (providers.gradleProperty('tellurium.ieeeHostNanSignAgnostic').map { it == 'true' }.orElse(false).get()) args '--host-nan-sign-agnostic'
 }
 
+tasks.register('nativeIntegerIeeeThroughput', JavaExec) {
+    group = 'verification'
+    description = 'Opt-in sustained-throughput microbenchmark of the integer-carrier fp64/fp32 helpers next to native int32/int64/fp32; not a conformance or Minecraft test.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    mainClass = 'dev.tellurium.runtime.vulkan.NativeIntegerIeeeThroughput'
+    providers.gradleProperty('tellurium.throughputDumpAsm').orNull?.with { jvmArgs "-Dtellurium.throughput.dumpAsm=${it}" }
+    args "--output=${layout.buildDirectory.file('reports/native-integer-ieee-throughput.json').get().asFile.absolutePath}"
+    providers.gradleProperty('tellurium.throughputRuns').orNull?.with { args "--runs=${it}" }
+    providers.gradleProperty('tellurium.throughputTargetMs').orNull?.with { args "--target-ms=${it}" }
+    providers.gradleProperty('tellurium.throughputOnly').orNull?.with { args "--only=${it}" }
+}
+
 tasks.register('nativeWorldgenSmoke', JavaExec) {
     group = 'verification'
     description = 'Opt-in real-device dispatch through the persistent production worldgen executor.'
