@@ -109,7 +109,11 @@ pair() { # name, mods subdirectory, extra script args, extra properties, "terrai
   fi
   [ "$verdict" = "PASS" ] && passed=$((passed + 1))
   [ -n "${EVALUATE_ONLY:-}" ] && verdict="$verdict (historical: newest existing files, not run now)"
-  echo "$name | vanilla $(cps "$vlog") cps | gpu $(cps "$glog") cps gpuChunks=${gpuChunks:-0} bail=${bail:-?} surface=${surface:-0} surfaceBail=${surfaceBail:-?} | $comparison| $verdict"
+  if [ -n "${CPU_ONLY:-}" ]; then
+    echo "$name | vanilla $(cps "$vlog") cps | tellurium (GPU off) $(cps "$glog") cps | $comparison| $verdict"
+  else
+    echo "$name | vanilla $(cps "$vlog") cps | gpu $(cps "$glog") cps gpuChunks=${gpuChunks:-0} bail=${bail:-?} surface=${surface:-0} surfaceBail=${surfaceBail:-?} | $comparison| $verdict"
+  fi
 }
 NETHER="tellurium.bench.dimension=minecraft:the_nether;tellurium.bench.centerX=300;tellurium.bench.centerZ=300"
 END="tellurium.bench.dimension=minecraft:the_end;tellurium.bench.centerX=300;tellurium.bench.centerZ=300"
