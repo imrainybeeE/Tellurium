@@ -4,15 +4,28 @@
 // (not jar-in-jar modules) and loaded by GpuRuntimeLoader in an isolated class
 // loader, so they cannot clash with a client's own LWJGL and are present on a
 // dedicated server that has none.
+//
+// The LWJGL version is the game's own where a target names one (lwjgl in mod/targets.gradle).  The isolated
+// loader is child-first for classes only: LWJGL looks its native libraries up as resources, parent first, so
+// on a client the game's copy of a library can be the one found, and it has to match the bundled Java side.
+// A target with macos: true also carries the macOS arm64 natives (lwjgl-vulkan's holds MoltenVK, the Vulkan
+// implementation there); on Windows and Linux the system's Vulkan loader is used.
+def gpuTarget = gradle.ext.modTargets[project.name]
+def lwjgl = gpuTarget.lwjgl ?: '3.3.3'
 configurations { gpuRuntime { transitive = false } }
 dependencies {
-    gpuRuntime 'org.lwjgl:lwjgl:3.3.3'
-    gpuRuntime 'org.lwjgl:lwjgl-vulkan:3.3.3'
-    gpuRuntime 'org.lwjgl:lwjgl-shaderc:3.3.3'
-    gpuRuntime 'org.lwjgl:lwjgl:3.3.3:natives-windows'
-    gpuRuntime 'org.lwjgl:lwjgl-shaderc:3.3.3:natives-windows'
-    gpuRuntime 'org.lwjgl:lwjgl:3.3.3:natives-linux'
-    gpuRuntime 'org.lwjgl:lwjgl-shaderc:3.3.3:natives-linux'
+    gpuRuntime "org.lwjgl:lwjgl:$lwjgl"
+    gpuRuntime "org.lwjgl:lwjgl-vulkan:$lwjgl"
+    gpuRuntime "org.lwjgl:lwjgl-shaderc:$lwjgl"
+    gpuRuntime "org.lwjgl:lwjgl:$lwjgl:natives-windows"
+    gpuRuntime "org.lwjgl:lwjgl-shaderc:$lwjgl:natives-windows"
+    gpuRuntime "org.lwjgl:lwjgl:$lwjgl:natives-linux"
+    gpuRuntime "org.lwjgl:lwjgl-shaderc:$lwjgl:natives-linux"
+    if (gpuTarget.macos) {
+        gpuRuntime "org.lwjgl:lwjgl:$lwjgl:natives-macos-arm64"
+        gpuRuntime "org.lwjgl:lwjgl-shaderc:$lwjgl:natives-macos-arm64"
+        gpuRuntime "org.lwjgl:lwjgl-vulkan:$lwjgl:natives-macos-arm64"
+    }
 }
 def gpuRuntimeDir = layout.buildDirectory.dir('generated/gpuRuntime')
 tasks.register('stageGpuRuntime', Sync) {

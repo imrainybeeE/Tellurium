@@ -23,6 +23,8 @@ gradle.ext.modTargets = [
     // NeoForge 21.11 has no additional runtime classpath for development runs.
     'neoforge-12111': [loader: 'neoforge', minecraft: '1.21.11', neoforge: '21.11.45', additionalClasspath: false],
     // 26.1 is not obfuscated: its Fabric builds use mod/fabric-unobfuscated.gradle (no mappings, no remapping).
-    'fabric-2612'   : [loader: 'fabric', script: 'fabric-unobfuscated', minecraft: '26.1.2', fabricApi: '0.155.3+26.1.2'],
+    // Its bundled GPU runtime uses the game's LWJGL and carries the macOS natives (mod/gpu-runtime.gradle).
+    'fabric-2612'   : [loader: 'fabric', script: 'fabric-unobfuscated', minecraft: '26.1.2', fabricApi: '0.155.3+26.1.2',
+                       lwjgl: '3.4.1', macos: true],
 ]
 gradle.ext.fabricLoader = '0.19.5'
