@@ -34,12 +34,14 @@ tasks.register('nativeIntegerIeeeCompile', JavaExec) {
 
 tasks.register('nativeIntegerIeee', JavaExec) {
     group = 'verification'
-    description = 'Opt-in real-device integer-carrier arithmetic conformance; fails when no suitable Vulkan device exists.'
+    description = 'Opt-in real-device integer-carrier arithmetic conformance (-Ptellurium.ieeeFused=true: the fused-kernel helpers instead); fails when no suitable Vulkan device exists.'
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
     jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
     mainClass = 'dev.tellurium.runtime.vulkan.NativeIntegerIeeeRunner'
-    args "--output=${layout.buildDirectory.file('reports/native-integer-ieee.json').get().asFile.absolutePath}"
+    def fusedIeee = providers.gradleProperty('tellurium.ieeeFused').map { it == 'true' }.orElse(false).get()
+    args "--output=${layout.buildDirectory.file(fusedIeee ? 'reports/native-integer-ieee-fused.json' : 'reports/native-integer-ieee.json').get().asFile.absolutePath}"
+    if (fusedIeee) args '--fused-ieee'
     if (providers.gradleProperty('tellurium.ieeeRelease').map { it == 'true' }.orElse(false).get()) args '--release'
     if (providers.gradleProperty('tellurium.ieeeArithmeticOnly').map { it == 'true' }.orElse(false).get()) args '--arithmetic-only'
     if (providers.gradleProperty('tellurium.ieeeHostNanSignAgnostic').map { it == 'true' }.orElse(false).get()) args '--host-nan-sign-agnostic'
