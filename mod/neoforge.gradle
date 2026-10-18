@@ -1,4 +1,4 @@
-plugins { id 'net.neoforged.moddev' version '2.0.148' }
+plugins { id 'net.neoforged.moddev' }
 
 // The NeoForge build of the mod for one Minecraft version: the build script of every NeoForge target in
 // mod/targets.gradle.  Which sources it is built from is in mod/sources.gradle.
@@ -24,11 +24,11 @@ neoForge {
             // NeoForge for 1.21.11 has no additional runtime classpath any more (additionalClasspath: false in the table);
             // there the mod's own nested copy of the runtime is what a development run uses, as a released jar does.
             if (target.additionalClasspath != false) {
-                additionalRuntimeClasspathConfiguration.dependencies.add module('org.lwjgl:lwjgl:3.3.3')
-                additionalRuntimeClasspathConfiguration.dependencies.add module('org.lwjgl:lwjgl-vulkan:3.3.3')
-                additionalRuntimeClasspathConfiguration.dependencies.add module('org.lwjgl:lwjgl-shaderc:3.3.3')
-                additionalRuntimeClasspathConfiguration.dependencies.add module('org.lwjgl:lwjgl:3.3.3:natives-windows')
-                additionalRuntimeClasspathConfiguration.dependencies.add module('org.lwjgl:lwjgl-shaderc:3.3.3:natives-windows')
+                additionalRuntimeClasspathConfiguration.dependencies.add dependencies.create('org.lwjgl:lwjgl:3.3.3')
+                additionalRuntimeClasspathConfiguration.dependencies.add dependencies.create('org.lwjgl:lwjgl-vulkan:3.3.3')
+                additionalRuntimeClasspathConfiguration.dependencies.add dependencies.create('org.lwjgl:lwjgl-shaderc:3.3.3')
+                additionalRuntimeClasspathConfiguration.dependencies.add dependencies.create('org.lwjgl:lwjgl:3.3.3:natives-windows')
+                additionalRuntimeClasspathConfiguration.dependencies.add dependencies.create('org.lwjgl:lwjgl-shaderc:3.3.3:natives-windows')
             }
             def lwjglStackSize = System.getProperty('tellurium.lwjgl.stackSize', '16384').trim()
             if (!(lwjglStackSize ==~ /[1-9][0-9]*/)) {

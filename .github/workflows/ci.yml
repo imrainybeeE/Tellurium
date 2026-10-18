@@ -18,17 +18,20 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          # Gradle runs on 25 (the last one listed is JAVA_HOME); 21 is the toolchain of the builds before 26.1.
+          java-version: |
+            21
+            25
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - uses: gradle/actions/setup-gradle@v4
       - name: Build and test
         shell: bash
-        run: bash ./gradlew test build verifyArchitecture testReport --no-daemon
+        run: bash ./gradlew test build verifyArchitecture testReport --no-daemon -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64
       - name: Synthetic CPU replay
         shell: bash
-        run: bash ./gradlew :oracle-and-replay:run --args='replay --output=build/replay/cpu.json' --no-daemon
+        run: bash ./gradlew :oracle-and-replay:run --args='replay --output=build/replay/cpu.json' --no-daemon -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64
       - name: Verification script tests
         run: python -m unittest discover -s scripts/tests -p "test_*.py" -v
       - name: Summarize actual tests

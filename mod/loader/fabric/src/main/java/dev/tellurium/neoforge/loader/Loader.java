@@ -43,10 +43,11 @@ public final class Loader {
     // ---- names (see Names) ----------------------------------------------------------------------------------
     // A development environment runs with the names the source uses; a released game with Fabric's
     // "intermediary" names.  tellurium/fabric-names.tsv, written by the build from the mappings the build
-    // itself uses, holds the pairs for the names that appear in this mod's source and nothing else.
+    // itself uses, holds the pairs for the names that appear in this mod's source and nothing else.  Minecraft
+    // 26.1 and later are not obfuscated: the game runs with the source's names ("official") and has no table.
 
     private static final boolean TRANSLATES =
-            !"named".equals(FabricLoader.getInstance().getMappingResolver().getCurrentRuntimeNamespace());
+            "intermediary".equals(FabricLoader.getInstance().getMappingResolver().getCurrentRuntimeNamespace());
     /** Runtime class name to source class name. */
     private static final Map<String, String> CLASSES = new HashMap<>();
     /** "runtime class name/source field name" to runtime field name. */

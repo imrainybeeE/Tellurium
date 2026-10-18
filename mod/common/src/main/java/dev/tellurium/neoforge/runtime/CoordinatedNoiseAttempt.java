@@ -62,7 +62,7 @@ final class CoordinatedNoiseAttempt {
         Objects.requireNonNull(releaseRequest, "releaseRequest");
 
         GenerationRequest request = new GenerationRequest(
-                new WorkKey(context, chunk.getPos().x, chunk.getPos().z,
+                new WorkKey(context, Version.chunkX(chunk.getPos()), Version.chunkZ(chunk.getPos()),
                         GenerationStage.NOISE, "noise", Version.minY(chunk),
                         chunk.getHeight(), EvaluationDomain.BLOCK),
                 ownership.ownershipToken(), 0,

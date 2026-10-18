@@ -1,4 +1,4 @@
-plugins { id 'fabric-loom' version '1.13.6' }
+plugins { id 'net.fabricmc.fabric-loom-remap' }
 
 // The Fabric build of the mod for one Minecraft version: the build script of every Fabric target in
 // mod/targets.gradle.  Which sources it is built from is in mod/sources.gradle.

@@ -53,12 +53,16 @@ public abstract class ChunkMapUnloadTypeMixin implements IdleUnloads {
 
     @Shadow @Final private Long2ByteMap chunkTypeCache;
 
-    /** Server thread only, like chunkTypeCache. */
-    @Unique private final Long2ByteOpenHashMap tellurium$knownTypes = new Long2ByteOpenHashMap();
+    /**
+     * Server thread only, like chunkTypeCache.  Made on first use, not by a field initialiser: since 26.1
+     * ChunkMap's constructor runs code before super(), and Mixin then leaves the initialiser out.
+     */
+    @Unique private Long2ByteOpenHashMap tellurium$knownTypes;
 
     @Unique
     private void tellurium$remember(long pos, byte type) {
         if (!tellurium$ENABLED) return;
+        if (tellurium$knownTypes == null) tellurium$knownTypes = new Long2ByteOpenHashMap();
         if (tellurium$knownTypes.size() >= tellurium$LIMIT) tellurium$knownTypes.clear(); // unknown positions read storage
         tellurium$knownTypes.put(pos, type);
     }
@@ -115,7 +119,7 @@ public abstract class ChunkMapUnloadTypeMixin implements IdleUnloads {
 
     @Inject(method = "isExistingChunkFull", at = @At("HEAD"), cancellable = true)
     private void tellurium$answerFromKnownType(ChunkPos pos, CallbackInfoReturnable<Boolean> callback) {
-        if (!tellurium$ENABLED) return;
+        if (!tellurium$ENABLED || tellurium$knownTypes == null) return;
         long key = pos.toLong();
         if (chunkTypeCache.get(key) != 0) return;
         byte known = tellurium$knownTypes.remove(key);

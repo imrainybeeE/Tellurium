@@ -585,7 +585,7 @@ public final class FastNoiseEngine {
             var surface = program.surface();
             int quartHeight = program.geometry().storageHeight() >> 2;
             int minQuartY = program.geometry().minY() >> 2;
-            int firstQuartX = chunk.getPos().x * 4 - 1, firstQuartZ = chunk.getPos().z * 4 - 1;
+            int firstQuartX = Version.chunkX(chunk.getPos()) * 4 - 1, firstQuartZ = Version.chunkZ(chunk.getPos()) * 4 - 1;
             short[] out = new short[36 * quartHeight];
             // The window touches at most the nine chunks around this one; each is asked for once.
             ChunkAccess[] sources = new ChunkAccess[9];
@@ -800,8 +800,8 @@ public final class FastNoiseEngine {
             Request r = requests.get(i);
             ChunkPos pos = r.chunk().getPos();
             int base = i * FusedGpuBackend.CHUNK_INFO_INTS * 4;
-            info.putInt(base, pos.x);
-            info.putInt(base + 4, pos.z);
+            info.putInt(base, Version.chunkX(pos));
+            info.putInt(base + 4, Version.chunkZ(pos));
             info.putInt(base + 8, beardOffset);
             info.putInt(base + 12, r.pieces());
             info.putInt(base + 16, r.junctions());
@@ -825,7 +825,7 @@ public final class FastNoiseEngine {
                 ChunkPos pos = requests.get(i).chunk().getPos();
                 for (int corner = 0; corner < 4; corner++) {
                     int a = -origin + 4 * (corner & 1), b = -origin + 4 * (corner >> 1);
-                    int qx = pos.x * 4 + origin + a, qz = pos.z * 4 + origin + b;
+                    int qx = Version.chunkX(pos) * 4 + origin + a, qz = Version.chunkZ(pos) * 4 + origin + b;
                     long key = ChunkPos.asLong(qx, qz);
                     int id = ids.get(key);
                     if (id < 0) {
@@ -848,7 +848,7 @@ public final class FastNoiseEngine {
             int origin = FusedNoiseCompiler.PRELIM_ORIGIN;
             for (int i = 0; i < requests.size(); i++) {
                 ChunkPos pos = requests.get(i).chunk().getPos();
-                int q0x = pos.x * 4 + origin, q0z = pos.z * 4 + origin;
+                int q0x = Version.chunkX(pos) * 4 + origin, q0z = Version.chunkZ(pos) * 4 + origin;
                 for (int a = 0; a < window; a++) {
                     for (int b = 0; b < window; b++) {
                         long key = ChunkPos.asLong(q0x + a, q0z + b);
@@ -967,7 +967,7 @@ public final class FastNoiseEngine {
         var g = r.program().geometry();
         var snapshot = r.program().snapshot();
         var reference = new DenseNoiseGenerator();
-        int cx = r.chunk().getPos().x, cz = r.chunk().getPos().z;
+        int cx = Version.chunkX(r.chunk().getPos()), cz = Version.chunkZ(r.chunk().getPos());
         int baseX = cx * 16, baseZ = cz * 16, cols = g.columnsPerAxis();
         StringBuilder out = new StringBuilder("Fast GPU NOISE debug chunk " + r.chunk().getPos() + ":");
         for (int f = 0; f < compiled.flatChannels(); f++) {

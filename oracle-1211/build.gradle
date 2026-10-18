@@ -1,4 +1,4 @@
-plugins { id 'net.neoforged.moddev' version '2.0.91' }
+plugins { id 'net.neoforged.moddev' }
 
 base { archivesName = 'tellurium-oracle-1.21.1' }
 

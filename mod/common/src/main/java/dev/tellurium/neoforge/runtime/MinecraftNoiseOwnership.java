@@ -13,6 +13,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import dev.tellurium.neoforge.version.Version;
 
 /**
  * Version-pinned ownership proof for a single BIOMES-to-NOISE transition.
@@ -59,7 +60,7 @@ public final class MinecraftNoiseOwnership {
                     + target.getPersistedStatus());
         }
         ChunkPos position = target.getPos();
-        GenerationChunkHolder holder = Objects.requireNonNull(cache.get(position.x, position.z),
+        GenerationChunkHolder holder = Objects.requireNonNull(cache.get(Version.chunkX(position), Version.chunkZ(position)),
                 "center generation holder");
         if (holder.getChunkIfPresentUnchecked(ChunkStatus.BIOMES) != target) {
             throw new IllegalStateException("center holder does not own the supplied BIOMES target");
@@ -81,7 +82,7 @@ public final class MinecraftNoiseOwnership {
     /** Rechecks holder identity, BIOMES ownership and status before mutation. */
     public boolean stillOwns() {
         try {
-            return cache.get(position.x, position.z) == holder
+            return cache.get(Version.chunkX(position), Version.chunkZ(position)) == holder
                     && holder.getChunkIfPresentUnchecked(ChunkStatus.BIOMES) == target
                     && target.getPersistedStatus() == ChunkStatus.BIOMES;
         } catch (RuntimeException staleCache) {

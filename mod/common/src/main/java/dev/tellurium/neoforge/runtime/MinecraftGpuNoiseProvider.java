@@ -29,6 +29,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import dev.tellurium.neoforge.version.Version;
 
 /**
  * Qualified GPU composition for the version-pinned NOISE boundary.
@@ -186,7 +187,7 @@ public final class MinecraftGpuNoiseProvider implements StagedRoute.QualifiedNoi
                                 .completed(elements).validated(elements);
                         backendReceipt.set(receipt);
                         if (isolatedEndpoint) {
-                            IsolatedGpuEvidence.writeBackend(chunk.getPos().x, chunk.getPos().z,
+                            IsolatedGpuEvidence.writeBackend(Version.chunkX(chunk.getPos()), Version.chunkZ(chunk.getPos()),
                                     rebound, receipt, generation);
                         }
                         return new BackendResult(ExecutionRoute.GPU, receipt, rebound);
@@ -196,7 +197,7 @@ public final class MinecraftGpuNoiseProvider implements StagedRoute.QualifiedNoi
                     () -> MinecraftNoisePostProcessor.apply(chunk), releaseRequest);
             if (!isolatedEndpoint) return completion;
             return CompletionObservation.observe(completion.toCompletableFuture(), (committed, failure) ->
-                    IsolatedGpuEvidence.writeTerminal(chunk.getPos().x, chunk.getPos().z,
+                    IsolatedGpuEvidence.writeTerminal(Version.chunkX(chunk.getPos()), Version.chunkZ(chunk.getPos()),
                             backendReceipt.get(), failure));
         } catch (Throwable failure) {
             releaseRequest.run();

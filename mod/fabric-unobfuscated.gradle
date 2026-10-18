@@ -1,0 +1,61 @@
+plugins { id 'net.fabricmc.fabric-loom' }
+
+// The Fabric build of the mod for a Minecraft version that is not obfuscated (26.1 and later): the build script
+// of every Fabric target in mod/targets.gradle with script 'fabric-unobfuscated'.  The game runs with the names
+// the source uses, so there are no mappings, no remapping and no name table (mod/fabric.gradle has them for the
+// obfuscated versions).  Which sources it is built from is in mod/sources.gradle.
+def target = gradle.ext.modTargets[project.name]
+base { archivesName = "tellurium-fabric-${target.minecraft}" }
+
+// 26.1 needs Java 25; the pure modules stay at 21, which the game loads as they are.
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+tasks.withType(JavaCompile).configureEach { options.release = 25 }
+
+dependencies {
+    minecraft "com.mojang:minecraft:${target.minecraft}"
+    implementation "net.fabricmc:fabric-loader:${gradle.ext.fabricLoader}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+    implementation project(':compiler-vulkan')
+}
+
+apply from: rootProject.file('mod/sources.gradle')
+
+tasks.named('processResources') {
+    inputs.property 'version', project.version
+    inputs.property 'minecraft', target.minecraft
+    filesMatching('fabric.mod.json') { expand version: project.version, minecraft: target.minecraft }
+}
+
+loom {
+    // The nearest version folder's class tweaker (its namespace is the runtime's, "official" here), else the
+    // loader's.
+    def tweakers = gradle.ext.modVersions[target.minecraft].collect { rootProject.file("mod/versions/$it/src/main/resources/tellurium.accesswidener") }
+    accessWidenerPath = (tweakers + [new File(modSources.glue, 'src/main/resources/tellurium.accesswidener')]).find { it.isFile() }
+    runs {
+        configureEach {
+            // Same switches as the NeoForge dev runs: every -Dtellurium.* given to Gradle reaches the game.
+            System.properties.each { key, value ->
+                if (key.toString().startsWith('tellurium.') && !(key.toString() in ['tellurium.candidate.runDir', 'tellurium.run.maxHeap', 'tellurium.run.jvmArgs'])) {
+                    // Relative output paths are resolved here: the game's working directory is the run directory.
+                    property key.toString(), key == 'tellurium.bench.output' && !value.toString().trim().isEmpty() ? project.file(value.toString().trim()).absolutePath : value.toString()
+                }
+            }
+            def maxHeap = System.getProperty('tellurium.run.maxHeap', '').trim()
+            if (!maxHeap.isEmpty()) vmArg "-Xmx${maxHeap}"
+            // -Dtellurium.run.jvmArgs='<args>': more JVM arguments for the game (as in mod/neoforge.gradle).
+            def extraJvmArgs = System.getProperty('tellurium.run.jvmArgs', '').trim()
+            if (!extraJvmArgs.isEmpty()) extraJvmArgs.split(/\s+/).each { vmArg it }
+            vmArg '-Dorg.lwjgl.system.stackSize=16384'
+            def directory = System.getProperty('tellurium.candidate.runDir', '').trim()
+            if (!directory.isEmpty()) runDir = project.projectDir.toPath().relativize(new File(directory).toPath()).toString().replace(File.separator, '/')
+        }
+        server { programArg 'nogui' }
+        client {
+            // Straight into an existing singleplayer world (a folder under <run directory>/saves).
+            def quickPlay = System.getProperty('tellurium.client.quickPlay', '').trim()
+            if (!quickPlay.isEmpty()) programArgs '--quickPlaySingleplayer', quickPlay
+        }
+    }
+}
+
+tasks.matching { it.name == 'runServer' || it.name == 'runClient' }.configureEach { dependsOn tasks.named('prepareCandidateRun') }

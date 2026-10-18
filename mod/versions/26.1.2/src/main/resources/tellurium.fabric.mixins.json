@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "dev.tellurium.neoforge.loader.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "StructurePaletteCacheMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

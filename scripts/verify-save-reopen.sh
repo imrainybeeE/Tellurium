@@ -15,6 +15,9 @@
 # (every save-path change switched off) and the structure digests of the two reopened worlds must be equal.
 #
 # Usage: STATUS=FULL scripts/verify-save-reopen.sh [radius] [mods subdirectory] [extra properties]
+# Without PowerShell (macOS, Linux) the runs go through scripts/bench-cps.sh, which takes the same arguments.
+# CPU_ONLY=1 runs with the GPU off, for a host without a usable GPU; "generated nothing again" then comes from
+# the benchmark's count of NOISE steps (noiseSteps=0) instead of the GPU engine's counters.
 set -u
 cd "$(dirname "$0")/.."
 RADIUS="${1:-45}"
@@ -24,17 +27,23 @@ STATUS="${STATUS:-FULL}"
 status_lc=$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')
 CACHE="tellurium.fast.pipelineCacheDir=$(pwd -W 2>/dev/null || pwd)/build/fast-cache"
 G="tellurium.fast.gpu=force;$CACHE"
+[ -n "${CPU_ONLY:-}" ] && G="tellurium.fast.gpu=off;$CACHE"
 flat() { tr '\n' ' '; }
+bench_cps() {
+  if command -v powershell.exe >/dev/null 2>&1; then powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/bench-cps.ps1 "$@"
+  else bash scripts/bench-cps.sh "$@"; fi
+}
+PYTHON=$(command -v python || command -v python3)
 printed() { printf '%s\n' "$2" | grep -m1 "^$1 " | sed "s/^$1 //" | tr -d '\r' | tr '\\' '/'; }
 fail() { echo "SAVE-REOPEN FAIL: $1"; exit 1; }
 # Every run's digest is the one beside the report that run printed, and every run has to exit successfully
 # with a report that says so; nothing is taken from earlier runs.
 bench() { # label, then bench-cps.ps1 arguments; sets $out
   local label="$1"; shift
-  out=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/bench-cps.ps1 -Status "$STATUS" -Label "$label" -RadiusChunks "$RADIUS" "$@" 2>&1) \
+  out=$(bench_cps -Status "$STATUS" -Label "$label" -RadiusChunks "$RADIUS" "$@" 2>&1) \
       || fail "the $label run failed: $(printf '%s\n' "$out" | grep -E "BENCH FAIL|FAILED|Exception" | tail -1 | cut -c1-200)"
   local report; report=$(printed REPORT "$out")
-  local checked; checked=$(python scripts/check-bench-report.py "$report" --endpoint "$STATUS" --radius "$RADIUS" 2>&1) || fail "the $label run's report: $checked"
+  local checked; checked=$("$PYTHON" scripts/check-bench-report.py "$report" --endpoint "$STATUS" --radius "$RADIUS" 2>&1) || fail "the $label run's report: $checked"
   digest="${report%.json}.digest.txt"
 }
 
@@ -45,7 +54,10 @@ cp "$run/logs/latest.log" "$run/logs/generate.log"
 generated="$digest"
 grep -E "benchmark PASS|benchmark FAIL" "$run/logs/generate.log" | sed 's/^.*tellurium-bench\/\]: /generate: /'
 grep -E "Fast GPU NOISE stopped" "$run/logs/generate.log" | tail -1 | sed -E 's/.*stopped: /generate: /' | cut -c1-110
-echo "generate: region files $(ls "$run"/candidate-world/region/*.mca 2>/dev/null | wc -l), $(du -sm "$run/candidate-world/region" | cut -f1) MB"
+# Since 26.1 the Overworld's folders are under dimensions/minecraft/overworld.
+region="$run/candidate-world/region"
+[ -d "$run/candidate-world/dimensions/minecraft/overworld/region" ] && region="$run/candidate-world/dimensions/minecraft/overworld/region"
+echo "generate: region files $(ls "$region"/*.mca 2>/dev/null | wc -l), $(du -sm "$region" | cut -f1) MB"
 
 bench sr-reopen -ReopenRunDir "build/run/$(basename "$run")" -Properties "$G;tellurium.bench.release=end;tellurium.bench.digest=true;$EXTRA"
 reopened="$digest"
@@ -53,14 +65,19 @@ grep -E "benchmark PASS|benchmark FAIL" "$run/logs/latest.log" | sed 's/^.*tellu
 stopped=$(grep -E "Fast GPU NOISE stopped" "$run/logs/latest.log" | tail -1 | sed -E 's/.*stopped: //')
 echo "reopen: $(echo "$stopped" | cut -c1-110)"
 regenerated=$(echo "$stopped" | sed -nE 's/^gpu=([0-9]+) fallback=([0-9]+).*/\1+\2/p')
+noiseSteps=$(grep -E "Tellurium benchmark (PASS|FAIL)" "$run/logs/latest.log" | tail -1 | sed -nE 's/.*noiseSteps=([0-9]+).*/\1/p')
 
 [ -f "$generated" ] && [ -f "$reopened" ] || fail "digest missing"
 # Structure starts are compared in the second half (see the top of this file); here their differences are
 # shown and not counted.  A chunk missing from either side, a malformed digest or a comparison that could
 # not be made fails whatever else is equal: the comparison's exit status decides, not its wording.
-comparison=$(python scripts/compare-digests.py --ignore structures "$generated" "$reopened" | flat; exit "${PIPESTATUS[0]}") && same=yes || same=
+comparison=$("$PYTHON" scripts/compare-digests.py --ignore structures "$generated" "$reopened" | flat; exit "${PIPESTATUS[0]}") && same=yes || same=
 echo "completion vs reopened: $comparison"
-[ "$regenerated" = "0+0" ] || fail "reopened run generated terrain again ($regenerated)"
+if [ -n "${CPU_ONLY:-}" ]; then
+  [ "$noiseSteps" = "0" ] || fail "reopened run started NOISE steps again (${noiseSteps:-no count in the log})"
+else
+  [ "$regenerated" = "0+0" ] || fail "reopened run generated terrain again ($regenerated)"
+fi
 [ -n "$same" ] || fail "the reopened world differs from what was generated"
 
 ORIGINAL="tellurium.asyncChunkSave=false;tellurium.asyncChunkCompress=false;tellurium.regionHeaderBatch=false;tellurium.asyncIoMailboxBatch=1;tellurium.asyncGroupCommit=false;tellurium.asyncChunkLoad=false;tellurium.parallelMailboxThreads=false"
@@ -70,7 +87,7 @@ run2=$(printed RUNDIR "$out")
 bench sr-orig-reopen -ReopenRunDir "build/run/$(basename "$run2")" -Properties "$G;$ORIGINAL;tellurium.bench.release=end;tellurium.bench.digest=true;$EXTRA"
 original="$digest"
 [ -f "$original" ] || fail "no digest for the original save path"
-structures=$(python scripts/compare-digests.py --only structures "$reopened" "$original" | flat; exit "${PIPESTATUS[0]}") && same=yes || same=
+structures=$("$PYTHON" scripts/compare-digests.py --only structures "$reopened" "$original" | flat; exit "${PIPESTATUS[0]}") && same=yes || same=
 echo "reopened vs reopened with the original save path: $structures"
 [ -n "$same" ] || fail "structure data differs from the original save path"
-echo "SAVE-REOPEN PASS ($STATUS radius $RADIUS, $MODS)"
+echo "SAVE-REOPEN PASS ($STATUS radius $RADIUS, $MODS${CPU_ONLY:+, CPU only: GPU off})"
