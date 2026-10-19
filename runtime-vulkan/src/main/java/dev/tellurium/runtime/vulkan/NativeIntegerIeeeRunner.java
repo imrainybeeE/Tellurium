@@ -4,6 +4,7 @@ package dev.tellurium.runtime.vulkan;
 import dev.tellurium.compiler.vulkan.fused.FusedIeeeHelpers;
 import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
 import dev.tellurium.compiler.vulkan.worldgen.WorldgenShaderCompiler;
+import dev.tellurium.runtime.vulkan.fused.FusedLibCampaign;
 import dev.tellurium.semantic.program.EvaluationDomain;
 import dev.tellurium.semantic.program.NumericProfile;
 import dev.tellurium.semantic.program.ProgramNode;
@@ -144,11 +145,14 @@ public final class NativeIntegerIeeeRunner {
 
     public static void main(String[] args) throws Exception {
         boolean fusedIeee = hasFlag(args, "--fused-ieee");
-        if (fusedIeee) {
-            // The fused campaign has its own shader, vectors and report; it does not combine with the other modes.
+        boolean fusedLib = hasFlag(args, "--fused-lib");
+        if (fusedIeee && fusedLib) throw new IllegalArgumentException("--fused-ieee does not combine with --fused-lib");
+        if (fusedIeee || fusedLib) {
+            // The fused campaigns have their own shader, vectors and report; they do not combine with the other modes.
+            String mode = fusedLib ? "--fused-lib" : "--fused-ieee";
             for (String other : List.of("--release", "--arithmetic-only", "--blended-only", "--blend-only", "--noise-only",
                     "--host-nan-sign-agnostic")) {
-                if (hasFlag(args, other)) throw new IllegalArgumentException("--fused-ieee does not combine with " + other);
+                if (hasFlag(args, other)) throw new IllegalArgumentException(mode + " does not combine with " + other);
             }
         }
         String source = shaderSource();
@@ -162,6 +166,11 @@ public final class NativeIntegerIeeeRunner {
             session.selectAndOpen();
             if (fusedIeee) {
                 FusedIeee.run(session, outputPath(args));
+                return;
+            }
+            if (fusedLib) {
+                FusedLibCampaign.run((spirv, operation, input, count, outputWords, extra) ->
+                        session.dispatch(spirv, operation, input, count, outputWords, extra, true), session.name(), outputPath(args));
                 return;
             }
             if (hasFlag(args, "--blended-only")) {
@@ -1361,42 +1370,87 @@ public final class NativeIntegerIeeeRunner {
         }
 
         private int[] dispatch(byte[] spirv, int operation, int[] input, int count, int outputWords) {
+            return dispatch(spirv, operation, input, count, outputWords, new int[0][], false);
+        }
+
+        /** The pipeline of {@link #cachedSpirv}, kept across dispatches by the campaigns that ask for it. */
+        private byte[] cachedSpirv;
+        private int cachedBindings;
+        private long cachedShader, cachedDescriptorLayout, cachedPipelineLayout, cachedPipeline;
+
+        private void releaseCachedPipeline() {
+            if (cachedPipeline != 0) vkDestroyPipeline(device, cachedPipeline, null);
+            if (cachedPipelineLayout != 0) vkDestroyPipelineLayout(device, cachedPipelineLayout, null);
+            if (cachedDescriptorLayout != 0) vkDestroyDescriptorSetLayout(device, cachedDescriptorLayout, null);
+            if (cachedShader != 0) vkDestroyShaderModule(device, cachedShader, null);
+            cachedSpirv = null;
+            cachedShader = cachedDescriptorLayout = cachedPipelineLayout = cachedPipeline = 0;
+        }
+
+        /**
+         * One dispatch. Binding 0 is the input words, binding 1 the output words, bindings 2 and up are the
+         * {@code extra} word arrays in order (read and written by the shader; the host reads back only the
+         * output). With {@code reusePipeline} the shader module and pipeline are created once per SPIR-V array
+         * and kept until the next different array or {@link #close()}; the large fused-library shader would
+         * otherwise be recompiled by the driver for every chunk.
+         */
+        private int[] dispatch(byte[] spirv, int operation, int[] input, int count, int outputWords, int[][] extra,
+                               boolean reusePipeline) {
+            int bindingCount = 2 + extra.length;
             Allocation inputBuffer = allocate((long) input.length * Integer.BYTES);
             Allocation outputBuffer = null;
+            Allocation[] extraBuffers = new Allocation[extra.length];
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 outputBuffer = allocate((long) count * outputWords * Integer.BYTES);
                 for (int i = 0; i < input.length; i++) inputBuffer.mapped.putInt(i * 4, input[i]);
+                for (int e = 0; e < extra.length; e++) {
+                    extraBuffers[e] = allocate(Math.max(4L, (long) extra[e].length * Integer.BYTES));
+                    for (int i = 0; i < extra[e].length; i++) extraBuffers[e].mapped.putInt(i * 4, extra[e][i]);
+                }
                 LongBuffer handle = stack.mallocLong(1);
-                ByteBuffer code = MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
+                ByteBuffer code = reusePipeline ? null : MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
                 long shader = 0, descriptorLayout = 0, pipelineLayout = 0, pipeline = 0;
                 long descriptorPool = 0, commandPool = 0, fence = 0;
                 try {
-                    code.put(spirv).flip();
-                    check(vkCreateShaderModule(device, org.lwjgl.vulkan.VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle), "vkCreateShaderModule");
-                    shader = handle.get(0);
-                    var bindings = VkDescriptorSetLayoutBinding.calloc(2, stack);
-                    for (int i = 0; i < 2; i++) bindings.get(i).binding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
-                    check(vkCreateDescriptorSetLayout(device, VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default().pBindings(bindings), null, handle), "vkCreateDescriptorSetLayout");
-                    descriptorLayout = handle.get(0);
-                    var push = org.lwjgl.vulkan.VkPushConstantRange.calloc(1, stack);
-                    // The primitive harness uses the first two words; generated
-                    // worldgen shaders reserve the full four-word dispatch ABI.
-                    push.get(0).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT).offset(0).size(16);
-                    check(vkCreatePipelineLayout(device, org.lwjgl.vulkan.VkPipelineLayoutCreateInfo.calloc(stack).sType$Default().pSetLayouts(stack.longs(descriptorLayout)).pPushConstantRanges(push), null, handle), "vkCreatePipelineLayout");
-                    pipelineLayout = handle.get(0);
-                    var pipelines = VkComputePipelineCreateInfo.calloc(1, stack);
-                    pipelines.get(0).sType$Default().layout(pipelineLayout).stage().sType$Default().stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shader).pName(stack.UTF8("main"));
-                    check(vkCreateComputePipelines(device, 0, pipelines, null, handle), "vkCreateComputePipelines");
-                    pipeline = handle.get(0);
+                    if (reusePipeline && (cachedSpirv != spirv || cachedBindings != bindingCount)) {
+                        releaseCachedPipeline();
+                        ByteBuffer cachedCode = MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
+                        try {
+                            cachedCode.put(spirv).flip();
+                            cachedShader = createShaderModule(stack, cachedCode, handle);
+                        } finally {
+                            MemoryUtil.memFree(cachedCode);
+                        }
+                        cachedDescriptorLayout = createDescriptorLayout(stack, bindingCount, handle);
+                        cachedPipelineLayout = createPipelineLayout(stack, cachedDescriptorLayout, handle);
+                        cachedPipeline = createPipeline(stack, cachedPipelineLayout, cachedShader, handle);
+                        cachedSpirv = spirv;
+                        cachedBindings = bindingCount;
+                    }
+                    if (reusePipeline) {
+                        shader = cachedShader;
+                        descriptorLayout = cachedDescriptorLayout;
+                        pipelineLayout = cachedPipelineLayout;
+                        pipeline = cachedPipeline;
+                    } else {
+                        code.put(spirv).flip();
+                        shader = createShaderModule(stack, code, handle);
+                        descriptorLayout = createDescriptorLayout(stack, bindingCount, handle);
+                        pipelineLayout = createPipelineLayout(stack, descriptorLayout, handle);
+                        pipeline = createPipeline(stack, pipelineLayout, shader, handle);
+                    }
                     var sizes = VkDescriptorPoolSize.calloc(1, stack);
-                    sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
+                    sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(bindingCount);
                     check(vkCreateDescriptorPool(device, VkDescriptorPoolCreateInfo.calloc(stack).sType$Default().maxSets(1).pPoolSizes(sizes), null, handle), "vkCreateDescriptorPool");
                     descriptorPool = handle.get(0);
                     check(vkAllocateDescriptorSets(device, VkDescriptorSetAllocateInfo.calloc(stack).sType$Default().descriptorPool(descriptorPool).pSetLayouts(stack.longs(descriptorLayout)), handle), "vkAllocateDescriptorSets");
                     long descriptor = handle.get(0);
-                    var writes = VkWriteDescriptorSet.calloc(2, stack);
-                    Allocation[] buffers = {inputBuffer, outputBuffer};
-                    for (int i = 0; i < 2; i++) {
+                    var writes = VkWriteDescriptorSet.calloc(bindingCount, stack);
+                    Allocation[] buffers = new Allocation[bindingCount];
+                    buffers[0] = inputBuffer;
+                    buffers[1] = outputBuffer;
+                    System.arraycopy(extraBuffers, 0, buffers, 2, extra.length);
+                    for (int i = 0; i < bindingCount; i++) {
                         var info = VkDescriptorBufferInfo.calloc(1, stack);
                         info.get(0).buffer(buffers[i].buffer).offset(0).range(buffers[i].mapped.capacity());
                         writes.get(i).sType$Default().dstSet(descriptor).dstBinding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).pBufferInfo(info);
@@ -1428,16 +1482,47 @@ public final class NativeIntegerIeeeRunner {
                     if (fence != 0) vkDestroyFence(device, fence, null);
                     if (commandPool != 0) vkDestroyCommandPool(device, commandPool, null);
                     if (descriptorPool != 0) vkDestroyDescriptorPool(device, descriptorPool, null);
-                    if (pipeline != 0) vkDestroyPipeline(device, pipeline, null);
-                    if (pipelineLayout != 0) vkDestroyPipelineLayout(device, pipelineLayout, null);
-                    if (descriptorLayout != 0) vkDestroyDescriptorSetLayout(device, descriptorLayout, null);
-                    if (shader != 0) vkDestroyShaderModule(device, shader, null);
-                    MemoryUtil.memFree(code);
+                    if (!reusePipeline) {
+                        if (pipeline != 0) vkDestroyPipeline(device, pipeline, null);
+                        if (pipelineLayout != 0) vkDestroyPipelineLayout(device, pipelineLayout, null);
+                        if (descriptorLayout != 0) vkDestroyDescriptorSetLayout(device, descriptorLayout, null);
+                        if (shader != 0) vkDestroyShaderModule(device, shader, null);
+                        MemoryUtil.memFree(code);
+                    }
                 }
             } finally {
                 if (outputBuffer != null) free(outputBuffer);
+                for (Allocation buffer : extraBuffers) if (buffer != null) free(buffer);
                 free(inputBuffer);
             }
+        }
+
+        private long createShaderModule(MemoryStack stack, ByteBuffer code, LongBuffer handle) {
+            check(vkCreateShaderModule(device, org.lwjgl.vulkan.VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle), "vkCreateShaderModule");
+            return handle.get(0);
+        }
+
+        private long createDescriptorLayout(MemoryStack stack, int bindingCount, LongBuffer handle) {
+            var bindings = VkDescriptorSetLayoutBinding.calloc(bindingCount, stack);
+            for (int i = 0; i < bindingCount; i++) bindings.get(i).binding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            check(vkCreateDescriptorSetLayout(device, VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default().pBindings(bindings), null, handle), "vkCreateDescriptorSetLayout");
+            return handle.get(0);
+        }
+
+        private long createPipelineLayout(MemoryStack stack, long descriptorLayout, LongBuffer handle) {
+            var push = org.lwjgl.vulkan.VkPushConstantRange.calloc(1, stack);
+            // The primitive harness uses the first two words; generated
+            // worldgen shaders reserve the full four-word dispatch ABI.
+            push.get(0).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT).offset(0).size(16);
+            check(vkCreatePipelineLayout(device, org.lwjgl.vulkan.VkPipelineLayoutCreateInfo.calloc(stack).sType$Default().pSetLayouts(stack.longs(descriptorLayout)).pPushConstantRanges(push), null, handle), "vkCreatePipelineLayout");
+            return handle.get(0);
+        }
+
+        private long createPipeline(MemoryStack stack, long pipelineLayout, long shader, LongBuffer handle) {
+            var pipelines = VkComputePipelineCreateInfo.calloc(1, stack);
+            pipelines.get(0).sType$Default().layout(pipelineLayout).stage().sType$Default().stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shader).pName(stack.UTF8("main"));
+            check(vkCreateComputePipelines(device, 0, pipelines, null, handle), "vkCreateComputePipelines");
+            return handle.get(0);
         }
 
         private void free(Allocation allocation) {
@@ -1479,6 +1564,7 @@ public final class NativeIntegerIeeeRunner {
         @Override public void close() {
             if (device != null) {
                 vkDeviceWaitIdle(device);
+                releaseCachedPipeline();
                 vkDestroyDevice(device, null);
                 device = null;
             }
