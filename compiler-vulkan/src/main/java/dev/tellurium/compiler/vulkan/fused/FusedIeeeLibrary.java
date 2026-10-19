@@ -21,7 +21,7 @@ public final class FusedIeeeLibrary {
     /**
      * The {@code wg_} helpers the library calls directly, plus {@link FusedIeeeHelpers#HELPERS}: the roots of
      * the {@code helperSource} closure the library needs. A kernel that calls further helpers adds its own.
-     * {@code FusedIeeeLibraryTest} derives this set from the library text, so it is neither short nor long.
+     * {@code FusedIeeeLibraryTextTest} derives this set from the library text, so it is neither short nor long.
      */
     public static final Set<String> HELPER_ROOTS;
 
