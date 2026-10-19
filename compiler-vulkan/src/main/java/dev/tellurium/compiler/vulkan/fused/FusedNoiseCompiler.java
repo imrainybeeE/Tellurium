@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.compiler.vulkan.fused;
 
+import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
+import dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract;
 import dev.tellurium.semantic.program.NumericProfile;
 import dev.tellurium.semantic.program.ProgramNode;
 import dev.tellurium.semantic.program.ValueType;
@@ -12,9 +14,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Compiles a captured Minecraft 1.21.1 noise router plus the NoiseChunk
@@ -45,6 +49,34 @@ public final class FusedNoiseCompiler {
      * running every exactness matrix again (KernelTextIdentityTest pins both).
      */
     public static final String VERSION = "worldgennext-fused-noise-v1";
+
+    /** The same comment line in the kernels of the IEEE_BITS dialect, which has its own lists of tested generators. */
+    public static final String IEEE_VERSION = "tellurium-fused-ieee-bits-v1";
+
+    /**
+     * The integer helpers the IEEE kernels, the generated functions and the library call directly; the closure
+     * they need is added by {@code IntegerIeeeEmitter.helperSource}, and {@link FusedIeeeHelpers#HELPERS} is
+     * added to it.  {@code wg_fp64_floor_to_i32} is left out on purpose: it fails instead of saturating, and
+     * the Java conversion is {@code wgf_fp64_to_i32_java}.
+     */
+    private static final Set<String> IEEE_ROOTS = ieeeRoots();
+
+    private static Set<String> ieeeRoots() {
+        var roots = new LinkedHashSet<String>();
+        for (String name : List.of("add", "sub", "mul", "div", "sqrt", "floor", "negate", "abs", "equal", "less", "less_equal",
+                "nan", "inf", "zero", "sign", "exp", "lerp", "from_int", "from_fp32", "to_fp32", "qnan", "pack")) {
+            roots.add("wg_fp64_" + name);
+        }
+        for (String name : List.of("add", "sub", "mul", "nan", "inf", "zero", "equal", "less", "less_equal", "negate", "abs",
+                "from_int", "pack")) {
+            roots.add("wg_fp32_" + name);
+        }
+        roots.add("wg_u64_shr_sticky");
+        roots.add("wg_u64_shl");
+        roots.add("wg_i64_negate");
+        roots.addAll(FusedIeeeHelpers.HELPERS);
+        return Set.copyOf(roots);
+    }
 
     public enum Mode { COLUMN, XZ, CORNER, CELL, VALUE, POINT, POINT_IN, POINT_OUT }
 
@@ -174,16 +206,32 @@ public final class FusedNoiseCompiler {
 
     public Compiled compile(Request request, Dialect dialect) {
         Objects.requireNonNull(dialect, "dialect");
-        if (dialect != Dialect.NATIVE_FP64) throw new UnsupportedFusedProgramException("The " + dialect + " dialect is not implemented");
-        return new Emitter(request, FusedArith.of(dialect)).emit();
+        // Fail before any work if the dialect's library is not there.
+        return compile(request, dialect, dialect == Dialect.IEEE_BITS ? ieeeLibrary() : null);
+    }
+
+    /** As {@link #compile(Request, Dialect)}, with the IEEE library text given instead of read from the resource. */
+    Compiled compile(Request request, Dialect dialect, String ieeeLibraryText) {
+        Objects.requireNonNull(dialect, "dialect");
+        if (dialect == Dialect.IEEE_BITS) Objects.requireNonNull(ieeeLibraryText, "ieeeLibraryText");
+        return new Emitter(request, FusedArith.of(dialect), ieeeLibraryText).emit();
     }
 
     static String library() {
-        try (InputStream in = FusedNoiseCompiler.class.getResourceAsStream("fused_lib.glsl")) {
-            if (in == null) throw new IllegalStateException("fused_lib.glsl resource missing");
+        return resource("fused_lib.glsl");
+    }
+
+    /** The library of the IEEE_BITS dialect: the same functions as {@link #library()} on integer carriers. */
+    static String ieeeLibrary() {
+        return resource("fused_lib_ieee.glsl");
+    }
+
+    static String resource(String name) {
+        try (InputStream in = FusedNoiseCompiler.class.getResourceAsStream(name)) {
+            if (in == null) throw new IllegalStateException(name + " resource missing");
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException failure) {
-            throw new IllegalStateException("Cannot read fused_lib.glsl", failure);
+            throw new IllegalStateException("Cannot read " + name, failure);
         }
     }
 
@@ -208,6 +256,7 @@ public final class FusedNoiseCompiler {
     private static final class Emitter {
         private final Request request;
         private final FusedArith arith;
+        private final String ieeeLibraryText;
         private final GeneratorSettingsSnapshot settings;
         private final FusedTables tables = new FusedTables();
         private final Map<ProgramNode, Integer> flatIds = new IdentityHashMap<>();
@@ -219,9 +268,10 @@ public final class FusedNoiseCompiler {
         private final Geometry geometry;
         private int beardKernelIndex;
 
-        Emitter(Request request, FusedArith arith) {
+        Emitter(Request request, FusedArith arith, String ieeeLibraryText) {
             this.request = request;
             this.arith = arith;
+            this.ieeeLibraryText = ieeeLibraryText;
             this.settings = request.settings();
             int w = settings.cellWidth(), h = settings.cellHeight();
             if (w <= 0 || h <= 0 || 16 % w != 0) throw new UnsupportedFusedProgramException("Unsupported cell geometry " + w + "x" + h);
@@ -278,9 +328,13 @@ public final class FusedNoiseCompiler {
             }
 
             int surfaceHeader = request.surface() == null ? 0 : tables.surface(request.surface());
-            String source = header() + FusedNoiseCompiler.library() + "\n" + accessors()
-                    + FusedKernels.prelude(arith, geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(arith, geometry) + functions
-                    + FusedKernels.kernels(flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface()) + FusedSurfaceKernels.BODY;
+            boolean ieee = arith.dialect() == Dialect.IEEE_BITS;
+            // The IEEE text is the native text's parts in the same order, preceded by the helpers they call.
+            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + ieeeLibraryText : library()) + "\n"
+                    + accessors() + FusedKernels.prelude(arith, geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(arith, geometry) + functions
+                    + FusedKernels.kernels(arith, flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface())
+                    + FusedSurfaceKernels.body(arith);
+            if (ieee) SpirvNumericContract.require(source, arith.dialect().profile());
             String fingerprint = sha256(source);
             List<ProgramNode> flatChildren = new ArrayList<>();
             for (ProgramNode.Marker flat : flats) flatChildren.add(flat.child());
@@ -289,13 +343,13 @@ public final class FusedNoiseCompiler {
             return new Compiled(source, tables.doubleTable(), tables.permTable(), flats.size(), interps.size(),
                     geometry, fingerprint, List.copyOf(flatChildren), List.copyOf(interpChildren),
                     structureFingerprint(source), xzNodes.size(), surfaceHeader,
-                    request.surface() == null ? null : sha256(request.surface().identity()), Dialect.NATIVE_FP64);
+                    request.surface() == null ? null : sha256(request.surface().identity()), arith.dialect());
         }
 
         private String header() {
             return "#version 460\n"
                     + "#extension GL_ARB_gpu_shader_int64 : require\n"
-                    + "// " + VERSION + "\n"
+                    + "// " + (arith.dialect() == Dialect.IEEE_BITS ? IEEE_VERSION : VERSION) + "\n"
                     + "#define SPLINE_COORDS " + maxSplineCoordinates + "\n"
                     + "layout(local_size_x = 64) in;\n"
                     + "struct ChunkInfo { int chunkX; int chunkZ; int beardOffset; int pieceCount; int junctionCount; int pad0; int pad1; int pad2; };\n"
