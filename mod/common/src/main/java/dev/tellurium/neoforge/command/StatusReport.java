@@ -34,7 +34,7 @@ public final class StatusReport {
         if (FastNoiseEngine.MODE == FastNoiseEngine.GpuMode.OFF) {
             lines.add("GPU: off (gpu.mode). CPU-side optimizations are active.");
         } else if (device != null) {
-            lines.add("GPU: " + device + " (mode " + (FastNoiseEngine.CHECK ? "check" : FastNoiseEngine.MODE.name().toLowerCase(Locale.ROOT)) + ")");
+            lines.add(gpuLine(device, FastNoiseEngine.CHECK ? "check" : FastNoiseEngine.MODE.name().toLowerCase(Locale.ROOT), FastNoiseEngine.arithmetic()));
         } else if (FastNoiseEngine.unavailableReason() != null) {
             lines.add("GPU: not available, terrain generates on the CPU. Reason: " + FastNoiseEngine.unavailableReason());
         } else {
@@ -90,6 +90,11 @@ public final class StatusReport {
         for (String problem : settings.problems()) lines.add("Config: " + problem);
         lines.add("Config file: " + settings.file());
         return lines;
+    }
+
+    /** "GPU: Apple M3 (mode auto, arithmetic: emulated in integers, no fp64 on this GPU)"; the arithmetic part is left out when it is not known. */
+    static String gpuLine(String device, String mode, String arithmetic) {
+        return "GPU: " + device + " (mode " + mode + (arithmetic == null ? "" : ", arithmetic: " + arithmetic) + ")";
     }
 
     private static String onOff(boolean value) {
