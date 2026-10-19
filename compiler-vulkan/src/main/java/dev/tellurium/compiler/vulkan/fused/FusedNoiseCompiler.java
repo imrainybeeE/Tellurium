@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.compiler.vulkan.fused;
 
+import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
+import dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract;
 import dev.tellurium.semantic.program.NumericProfile;
 import dev.tellurium.semantic.program.ProgramNode;
 import dev.tellurium.semantic.program.ValueType;
@@ -12,9 +14,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Compiles a captured Minecraft 1.21.1 noise router plus the NoiseChunk
@@ -45,6 +49,34 @@ public final class FusedNoiseCompiler {
      * running every exactness matrix again (KernelTextIdentityTest pins both).
      */
     public static final String VERSION = "worldgennext-fused-noise-v1";
+
+    /** The same comment line in the kernels of the IEEE_BITS dialect, which has its own lists of tested generators. */
+    public static final String IEEE_VERSION = "tellurium-fused-ieee-bits-v1";
+
+    /**
+     * The integer helpers the IEEE kernels, the generated functions and the library call directly; the closure
+     * they need is added by {@code IntegerIeeeEmitter.helperSource}, and {@link FusedIeeeHelpers#HELPERS} is
+     * added to it.  {@code wg_fp64_floor_to_i32} is left out on purpose: it fails instead of saturating, and
+     * the Java conversion is {@code wgf_fp64_to_i32_java}.
+     */
+    private static final Set<String> IEEE_ROOTS = ieeeRoots();
+
+    private static Set<String> ieeeRoots() {
+        var roots = new LinkedHashSet<String>();
+        for (String name : List.of("add", "sub", "mul", "div", "sqrt", "floor", "negate", "abs", "equal", "less", "less_equal",
+                "nan", "inf", "zero", "sign", "exp", "lerp", "from_int", "from_fp32", "to_fp32", "qnan", "pack")) {
+            roots.add("wg_fp64_" + name);
+        }
+        for (String name : List.of("add", "sub", "mul", "nan", "inf", "zero", "equal", "less", "less_equal", "negate", "abs",
+                "from_int", "pack")) {
+            roots.add("wg_fp32_" + name);
+        }
+        roots.add("wg_u64_shr_sticky");
+        roots.add("wg_u64_shl");
+        roots.add("wg_i64_negate");
+        roots.addAll(FusedIeeeHelpers.HELPERS);
+        return Set.copyOf(roots);
+    }
 
     public enum Mode { COLUMN, XZ, CORNER, CELL, VALUE, POINT, POINT_IN, POINT_OUT }
 
@@ -174,16 +206,32 @@ public final class FusedNoiseCompiler {
 
     public Compiled compile(Request request, Dialect dialect) {
         Objects.requireNonNull(dialect, "dialect");
-        if (dialect != Dialect.NATIVE_FP64) throw new UnsupportedFusedProgramException("The " + dialect + " dialect is not implemented");
-        return new Emitter(request).emit();
+        // Fail before any work if the dialect's library is not there.
+        return compile(request, dialect, dialect == Dialect.IEEE_BITS ? ieeeLibrary() : null);
+    }
+
+    /** As {@link #compile(Request, Dialect)}, with the IEEE library text given instead of read from the resource. */
+    Compiled compile(Request request, Dialect dialect, String ieeeLibraryText) {
+        Objects.requireNonNull(dialect, "dialect");
+        if (dialect == Dialect.IEEE_BITS) Objects.requireNonNull(ieeeLibraryText, "ieeeLibraryText");
+        return new Emitter(request, FusedArith.of(dialect), ieeeLibraryText).emit();
     }
 
     static String library() {
-        try (InputStream in = FusedNoiseCompiler.class.getResourceAsStream("fused_lib.glsl")) {
-            if (in == null) throw new IllegalStateException("fused_lib.glsl resource missing");
+        return resource("fused_lib.glsl");
+    }
+
+    /** The library of the IEEE_BITS dialect: the same functions as {@link #library()} on integer carriers. */
+    static String ieeeLibrary() {
+        return resource("fused_lib_ieee.glsl");
+    }
+
+    static String resource(String name) {
+        try (InputStream in = FusedNoiseCompiler.class.getResourceAsStream(name)) {
+            if (in == null) throw new IllegalStateException(name + " resource missing");
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException failure) {
-            throw new IllegalStateException("Cannot read fused_lib.glsl", failure);
+            throw new IllegalStateException("Cannot read " + name, failure);
         }
     }
 
@@ -207,6 +255,8 @@ public final class FusedNoiseCompiler {
 
     private static final class Emitter {
         private final Request request;
+        private final FusedArith arith;
+        private final String ieeeLibraryText;
         private final GeneratorSettingsSnapshot settings;
         private final FusedTables tables = new FusedTables();
         private final Map<ProgramNode, Integer> flatIds = new IdentityHashMap<>();
@@ -218,8 +268,10 @@ public final class FusedNoiseCompiler {
         private final Geometry geometry;
         private int beardKernelIndex;
 
-        Emitter(Request request) {
+        Emitter(Request request, FusedArith arith, String ieeeLibraryText) {
             this.request = request;
+            this.arith = arith;
+            this.ieeeLibraryText = ieeeLibraryText;
             this.settings = request.settings();
             int w = settings.cellWidth(), h = settings.cellHeight();
             if (w <= 0 || h <= 0 || 16 % w != 0) throw new UnsupportedFusedProgramException("Unsupported cell geometry " + w + "x" + h);
@@ -276,9 +328,13 @@ public final class FusedNoiseCompiler {
             }
 
             int surfaceHeader = request.surface() == null ? 0 : tables.surface(request.surface());
-            String source = header() + FusedNoiseCompiler.library() + "\n" + accessors()
-                    + FusedKernels.prelude(geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(geometry) + functions
-                    + FusedKernels.kernels(flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface()) + FusedSurfaceKernels.BODY;
+            boolean ieee = arith.dialect() == Dialect.IEEE_BITS;
+            // The IEEE text is the native text's parts in the same order, preceded by the helpers they call.
+            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + ieeeLibraryText : library()) + "\n"
+                    + accessors() + FusedKernels.prelude(arith, geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(arith, geometry) + functions
+                    + FusedKernels.kernels(arith, flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface())
+                    + FusedSurfaceKernels.body(arith);
+            if (ieee) SpirvNumericContract.require(source, arith.dialect().profile());
             String fingerprint = sha256(source);
             List<ProgramNode> flatChildren = new ArrayList<>();
             for (ProgramNode.Marker flat : flats) flatChildren.add(flat.child());
@@ -287,27 +343,27 @@ public final class FusedNoiseCompiler {
             return new Compiled(source, tables.doubleTable(), tables.permTable(), flats.size(), interps.size(),
                     geometry, fingerprint, List.copyOf(flatChildren), List.copyOf(interpChildren),
                     structureFingerprint(source), xzNodes.size(), surfaceHeader,
-                    request.surface() == null ? null : sha256(request.surface().identity()), Dialect.NATIVE_FP64);
+                    request.surface() == null ? null : sha256(request.surface().identity()), arith.dialect());
         }
 
         private String header() {
             return "#version 460\n"
                     + "#extension GL_ARB_gpu_shader_int64 : require\n"
-                    + "// " + VERSION + "\n"
+                    + "// " + (arith.dialect() == Dialect.IEEE_BITS ? IEEE_VERSION : VERSION) + "\n"
                     + "#define SPLINE_COORDS " + maxSplineCoordinates + "\n"
                     + "layout(local_size_x = 64) in;\n"
                     + "struct ChunkInfo { int chunkX; int chunkZ; int beardOffset; int pieceCount; int junctionCount; int pad0; int pad1; int pad2; };\n"
                     + "layout(std430, binding = 0) readonly buffer Chunks { ChunkInfo chunks[]; };\n"
                     + "layout(std430, binding = 1) readonly buffer Perm { uint perm[]; };\n"
-                    + "layout(std430, binding = 2) readonly buffer DTab { double dtab[]; };\n"
-                    + "layout(std430, binding = 3) buffer Columns { double columns[]; };\n"
-                    + "layout(std430, binding = 4) buffer Corners { double corners[]; };\n"
+                    + "layout(std430, binding = 2) readonly buffer DTab { " + arith.type() + " dtab[]; };\n"
+                    + "layout(std430, binding = 3) buffer Columns { " + arith.type() + " columns[]; };\n"
+                    + "layout(std430, binding = 4) buffer Corners { " + arith.type() + " corners[]; };\n"
                     + "layout(std430, binding = 5) buffer Aquifer { int aquifer[]; };\n"
                     + "layout(std430, binding = 6) buffer Output { uint blocks[]; };\n"
                     + "layout(std430, binding = 7) readonly buffer Beard { int beard[]; };\n"
                     + "layout(std430, binding = 8) buffer Flags { uint flags[]; };\n"
                     + "layout(std430, binding = 9) buffer Heights { int heights[]; };\n"
-                    + "layout(std430, binding = 10) buffer XzCache { double xzcache[]; };\n"
+                    + "layout(std430, binding = 10) buffer XzCache { " + arith.type() + " xzcache[]; };\n"
                     + "layout(std430, binding = 11) readonly buffer PrelimIndex { int prelimIndex[]; };\n"
                     + "layout(std430, binding = 12) readonly buffer PrelimCols { int prelimCols[]; };\n"
                     + "layout(std430, binding = 13) buffer PrelimOut { int prelimOut[]; };\n"
@@ -320,10 +376,11 @@ public final class FusedNoiseCompiler {
             Geometry g = geometry;
             int nx = g.cornersPerAxisXZ(), ny = g.cornersY(), cols = g.columnsPerAxis();
             int interpCount = Math.max(1, interps.size()), flatCount = Math.max(1, flats.size());
+            String type = arith.type(), precise = arith.preciseType();
             StringBuilder out = new StringBuilder();
             out.append("const int FLATS = ").append(flatCount).append(";\n");
             out.append("const int XZS = ").append(Math.max(1, xzNodes.size())).append(";\n");
-            out.append("double xzv(int c, ivec3 p) {\n")
+            out.append(type).append(" xzv(int c, ivec3 p) {\n")
                     .append("    return xzcache[(int(gChunk) * XZS + c) * 256 + (((p.z - gBaseZ) << 4) | (p.x - gBaseX))];\n}\n");
             out.append("const int INTERPS = ").append(interpCount).append(";\n");
             out.append("const int COLS = ").append(cols).append(";\n");
@@ -332,50 +389,46 @@ public final class FusedNoiseCompiler {
             out.append("const int CELL_W = ").append(g.cellWidth()).append(";\n");
             out.append("const int CELL_H = ").append(g.cellHeight()).append(";\n");
             out.append("const int MIN_CELL_Y = ").append(g.minCellY()).append(";\n");
-            out.append("const double INV_CELL_W = ").append(dlit(1.0 / g.cellWidth())).append(";\n");
-            out.append("const double INV_CELL_H = ").append(dlit(1.0 / g.cellHeight())).append(";\n");
-            out.append("double colv(int f, ivec3 p) {\n")
+            out.append("const ").append(type).append(" INV_CELL_W = ").append(arith.dlit(1.0 / g.cellWidth())).append(";\n");
+            out.append("const ").append(type).append(" INV_CELL_H = ").append(arith.dlit(1.0 / g.cellHeight())).append(";\n");
+            out.append(type).append(" colv(int f, ivec3 p) {\n")
                     .append("    int qx = (p.x >> 2) - gFirstQX; int qz = (p.z >> 2) - gFirstQZ;\n")
                     .append("    return columns[((int(gChunk) * FLATS + f) * COLS + qx) * COLS + qz];\n}\n");
             out.append("bool flatInBounds(ivec3 p) {\n")
                     .append("    int qx = (p.x >> 2) - gFirstQX; int qz = (p.z >> 2) - gFirstQZ;\n")
                     .append("    return qx >= 0 && qz >= 0 && qx < COLS && qz < COLS;\n}\n");
-            out.append("double cv(int k, int ix, int iy, int iz) {\n")
+            out.append(type).append(" cv(int k, int ix, int iy, int iz) {\n")
                     .append("    return corners[(((int(gChunk) * INTERPS + k) * CNY + iy) * CNX + ix) * CNX + iz];\n}\n");
             // lerp3 (X, Y, Z) used inside CacheAllInCell final-density fill.
-            out.append("precise double interpCell(int k, ivec3 p) {\n")
-                    .append("    int lx = p.x - gBaseX, lz = p.z - gBaseZ;\n")
-                    .append("    int ix = lx / CELL_W, iz = lz / CELL_W;\n")
-                    .append("    int cy = p.y >> ").append(Integer.numberOfTrailingZeros(g.cellHeight())).append(";\n")
-                    .append("    int iy = cy - MIN_CELL_Y;\n")
-                    .append("    precise double dx = double(lx - ix * CELL_W) * INV_CELL_W;\n")
-                    .append("    precise double dy = double(p.y - cy * CELL_H) * INV_CELL_H;\n")
-                    .append("    precise double dz = double(lz - iz * CELL_W) * INV_CELL_W;\n")
-                    .append("    double n000 = cv(k, ix, iy, iz), n100 = cv(k, ix + 1, iy, iz);\n")
-                    .append("    double n010 = cv(k, ix, iy + 1, iz), n110 = cv(k, ix + 1, iy + 1, iz);\n")
-                    .append("    double n001 = cv(k, ix, iy, iz + 1), n101 = cv(k, ix + 1, iy, iz + 1);\n")
-                    .append("    double n011 = cv(k, ix, iy + 1, iz + 1), n111 = cv(k, ix + 1, iy + 1, iz + 1);\n")
-                    .append("    precise double a = lerpd(dy, lerpd(dx, n000, n100), lerpd(dx, n010, n110));\n")
-                    .append("    precise double b = lerpd(dy, lerpd(dx, n001, n101), lerpd(dx, n011, n111));\n")
+            out.append(precise).append(" interpCell(int k, ivec3 p) {\n")
+                    .append(interpolationSetup(g))
+                    .append("    ").append(precise).append(" a = lerpd(dy, lerpd(dx, n000, n100), lerpd(dx, n010, n110));\n")
+                    .append("    ").append(precise).append(" b = lerpd(dy, lerpd(dx, n001, n101), lerpd(dx, n011, n111));\n")
                     .append("    return lerpd(dz, a, b);\n}\n");
             // Running interpolator value (Y, then X, then Z) for ore/barrier consumers.
-            out.append("precise double interpValue(int k, ivec3 p) {\n")
-                    .append("    int lx = p.x - gBaseX, lz = p.z - gBaseZ;\n")
-                    .append("    int ix = lx / CELL_W, iz = lz / CELL_W;\n")
-                    .append("    int cy = p.y >> ").append(Integer.numberOfTrailingZeros(g.cellHeight())).append(";\n")
-                    .append("    int iy = cy - MIN_CELL_Y;\n")
-                    .append("    precise double dx = double(lx - ix * CELL_W) * INV_CELL_W;\n")
-                    .append("    precise double dy = double(p.y - cy * CELL_H) * INV_CELL_H;\n")
-                    .append("    precise double dz = double(lz - iz * CELL_W) * INV_CELL_W;\n")
-                    .append("    double n000 = cv(k, ix, iy, iz), n100 = cv(k, ix + 1, iy, iz);\n")
-                    .append("    double n010 = cv(k, ix, iy + 1, iz), n110 = cv(k, ix + 1, iy + 1, iz);\n")
-                    .append("    double n001 = cv(k, ix, iy, iz + 1), n101 = cv(k, ix + 1, iy, iz + 1);\n")
-                    .append("    double n011 = cv(k, ix, iy + 1, iz + 1), n111 = cv(k, ix + 1, iy + 1, iz + 1);\n")
-                    .append("    precise double xz00 = lerpd(dy, n000, n010), xz10 = lerpd(dy, n100, n110);\n")
-                    .append("    precise double xz01 = lerpd(dy, n001, n011), xz11 = lerpd(dy, n101, n111);\n")
-                    .append("    precise double z0 = lerpd(dx, xz00, xz10), z1 = lerpd(dx, xz01, xz11);\n")
+            out.append(precise).append(" interpValue(int k, ivec3 p) {\n")
+                    .append(interpolationSetup(g))
+                    .append("    ").append(precise).append(" xz00 = lerpd(dy, n000, n010), xz10 = lerpd(dy, n100, n110);\n")
+                    .append("    ").append(precise).append(" xz01 = lerpd(dy, n001, n011), xz11 = lerpd(dy, n101, n111);\n")
+                    .append("    ").append(precise).append(" z0 = lerpd(dx, xz00, xz10), z1 = lerpd(dx, xz01, xz11);\n")
                     .append("    return lerpd(dz, z0, z1);\n}\n");
             return out.toString();
+        }
+
+        /** The cell, the fractions inside it and the eight corner values, the same lines at the start of both interpolators. */
+        private String interpolationSetup(Geometry g) {
+            String type = arith.type(), precise = arith.preciseType();
+            return "    int lx = p.x - gBaseX, lz = p.z - gBaseZ;\n"
+                    + "    int ix = lx / CELL_W, iz = lz / CELL_W;\n"
+                    + "    int cy = p.y >> " + Integer.numberOfTrailingZeros(g.cellHeight()) + ";\n"
+                    + "    int iy = cy - MIN_CELL_Y;\n"
+                    + "    " + precise + " dx = " + arith.mul(arith.fromInt("lx - ix * CELL_W"), "INV_CELL_W") + ";\n"
+                    + "    " + precise + " dy = " + arith.mul(arith.fromInt("p.y - cy * CELL_H"), "INV_CELL_H") + ";\n"
+                    + "    " + precise + " dz = " + arith.mul(arith.fromInt("lz - iz * CELL_W"), "INV_CELL_W") + ";\n"
+                    + "    " + type + " n000 = cv(k, ix, iy, iz), n100 = cv(k, ix + 1, iy, iz);\n"
+                    + "    " + type + " n010 = cv(k, ix, iy + 1, iz), n110 = cv(k, ix + 1, iy + 1, iz);\n"
+                    + "    " + type + " n001 = cv(k, ix, iy, iz + 1), n101 = cv(k, ix + 1, iy, iz + 1);\n"
+                    + "    " + type + " n011 = cv(k, ix, iy + 1, iz + 1), n111 = cv(k, ix + 1, iy + 1, iz + 1);\n";
         }
 
         private void emitFunction(String name, ProgramNode root, Mode mode) {
@@ -387,7 +440,7 @@ public final class FusedNoiseCompiler {
                 case POINT, POINT_IN, POINT_OUT -> "defined(K_AQUIFER)";
             };
             functions.append("#if ").append(guard).append("\n");
-            functions.append("precise double ").append(name).append("(ivec3 p) {\n");
+            functions.append(arith.preciseType()).append(' ').append(name).append("(ivec3 p) {\n");
             if (mode == Mode.POINT) {
                 // Whether p lies in the chunk's FlatCache range is the same for every
                 // FlatCache node, so decide once and share subexpressions per variant.
@@ -407,7 +460,7 @@ public final class FusedNoiseCompiler {
 
         private String fresh(Block block, String expression) {
             String name = "v" + (counter++);
-            block.line("precise double " + name + " = " + expression + ";");
+            block.line(arith.preciseType() + " " + name + " = " + expression + ";");
             return name;
         }
 
@@ -534,12 +587,12 @@ public final class FusedNoiseCompiler {
                     String upper = value(from.left(), outer, Mode.POINT_OUT);
                     String density = value(search.left(), loop, Mode.POINT_OUT);
                     functions.append(outer.code);
-                    functions.append("        int top = mfloor(jdiv(").append(upper).append(", ").append(dlit(cell.intValue())).append(")) * ")
+                    functions.append("        int top = mfloor(jdiv(").append(upper).append(", ").append(arith.dlit(cell.intValue())).append(")) * ")
                             .append(cell.intValue()).append(";\n");
                     functions.append("        if (top <= ").append(lower.intValue()).append(") return ").append(lower.intValue()).append(";\n");
                     functions.append("        for (int y = top; y >= ").append(lower.intValue()).append("; y -= ").append(cell.intValue())
                             .append(") {\n            p.y = y;\n").append(loop.code);
-                    functions.append("            if (").append(density).append(" > 0.0lf) return y;\n        }\n");
+                    functions.append("            if (").append(arith.gt(density, arith.lit("0.0lf"))).append(") return y;\n        }\n");
                     functions.append("        return ").append(lower.intValue()).append(";\n");
                 } else {
                     String level = value(root, outer, Mode.POINT_OUT);
@@ -576,7 +629,7 @@ public final class FusedNoiseCompiler {
             }
             functions.append(outer.code);
             functions.append("        for (int y = MIN_Y + GEN_HEIGHT; y >= MIN_Y; y -= CELL_H) {\n            p.y = y;\n").append(loop.code);
-            functions.append("            if (").append(result).append(" > 0.390625lf) return y;\n        }\n");
+            functions.append("            if (").append(arith.gt(result, arith.lit("0.390625lf"))).append(") return y;\n        }\n");
         }
 
         private String value(ProgramNode node, Block block, Mode mode) {
@@ -597,45 +650,49 @@ public final class FusedNoiseCompiler {
                         + node.operation() + " " + node.type());
             }
             String result = switch (node) {
-                case ProgramNode.Constant c -> dlit(((Number) c.value()).doubleValue());
+                case ProgramNode.Constant c -> arith.dlit(((Number) c.value()).doubleValue());
                 case ProgramNode.Input input -> switch (input.name()) {
-                    case "x", "worldX" -> "double(p.x)";
-                    case "y", "worldY" -> "double(p.y)";
-                    case "z", "worldZ" -> "double(p.z)";
+                    case "x", "worldX" -> arith.fromInt("p.x");
+                    case "y", "worldY" -> arith.fromInt("p.y");
+                    case "z", "worldZ" -> arith.fromInt("p.z");
                     default -> throw new UnsupportedFusedProgramException("Unsupported input " + input.name());
                 };
-                case ProgramNode.Noise noise -> fresh(block, "normalNoise(" + normal(noise.parameters()) + ", double(p.x) * "
-                        + dlit(noise.xzScale()) + ", double(p.y) * " + dlit(noise.yScale()) + ", double(p.z) * "
-                        + dlit(noise.xzScale()) + ")");
+                case ProgramNode.Noise noise -> {
+                    String xz = arith.dlit(noise.xzScale());
+                    yield fresh(block, "normalNoise(" + normal(noise.parameters()) + ", " + arith.mul(arith.fromInt("p.x"), xz)
+                            + ", " + arith.mul(arith.fromInt("p.y"), arith.dlit(noise.yScale())) + ", " + arith.mul(arith.fromInt("p.z"), xz) + ")");
+                }
                 case ProgramNode.ShiftedNoise noise -> {
                     String sx = value(noise.shiftX(), block, mode);
                     String sy = value(noise.shiftY(), block, mode);
                     String sz = value(noise.shiftZ(), block, mode);
-                    yield fresh(block, "normalNoise(" + normal(noise.parameters()) + ", double(p.x) * " + dlit(noise.xzScale())
-                            + " + " + sx + ", double(p.y) * " + dlit(noise.yScale()) + " + " + sy + ", double(p.z) * "
-                            + dlit(noise.xzScale()) + " + " + sz + ")");
+                    String xz = arith.dlit(noise.xzScale());
+                    yield fresh(block, "normalNoise(" + normal(noise.parameters()) + ", " + arith.add(arith.mul(arith.fromInt("p.x"), xz), sx)
+                            + ", " + arith.add(arith.mul(arith.fromInt("p.y"), arith.dlit(noise.yScale())), sy) + ", "
+                            + arith.add(arith.mul(arith.fromInt("p.z"), xz), sz) + ")");
                 }
                 case ProgramNode.Shift shift -> {
-                    String s = dlit(shift.scale());
+                    String s = arith.dlit(shift.scale());
+                    String zero = arith.lit("0.0lf");
                     String args = switch (shift.axis()) {
-                        case "XYZ" -> "double(p.x) * " + s + ", double(p.y) * " + s + ", double(p.z) * " + s;
-                        case "X0Z" -> "double(p.x) * " + s + ", 0.0lf, double(p.z) * " + s;
-                        case "ZX0" -> "double(p.z) * " + s + ", double(p.x) * " + s + ", 0.0lf";
+                        case "XYZ" -> arith.mul(arith.fromInt("p.x"), s) + ", " + arith.mul(arith.fromInt("p.y"), s) + ", " + arith.mul(arith.fromInt("p.z"), s);
+                        case "X0Z" -> arith.mul(arith.fromInt("p.x"), s) + ", " + zero + ", " + arith.mul(arith.fromInt("p.z"), s);
+                        case "ZX0" -> arith.mul(arith.fromInt("p.z"), s) + ", " + arith.mul(arith.fromInt("p.x"), s) + ", " + zero;
                         default -> throw new UnsupportedFusedProgramException("Unknown shift axis " + shift.axis());
                     };
-                    yield fresh(block, "normalNoise(" + normal(shift.parameters()) + ", " + args + ") * 4.0lf");
+                    yield fresh(block, arith.mul("normalNoise(" + normal(shift.parameters()) + ", " + args + ")", arith.lit("4.0lf")));
                 }
                 case ProgramNode.BlendedNoise blended -> fresh(block, "blendedNoise(" + tables.blended(blended.parameters()) + ", p.x, p.y, p.z)");
                 case ProgramNode.EndIsland end -> fresh(block, "endIsland(" + tables.endIsland(end.parameters()) + ", p.x, p.z)");
                 case ProgramNode.WeirdScaledSampler sampler -> {
                     String input = value(sampler.input(), block, mode);
                     String rarity = fresh(block, (sampler.rarityMapper().equals("TYPE1") ? "rarity3D(" : "rarity2D(") + input + ")");
-                    yield fresh(block, rarity + " * abs(normalNoise(" + normal(sampler.parameters()) + ", jdiv(double(p.x), " + rarity
-                            + "), jdiv(double(p.y), " + rarity + "), jdiv(double(p.z), " + rarity + ")))");
+                    yield fresh(block, arith.mul(rarity, arith.abs("normalNoise(" + normal(sampler.parameters()) + ", jdiv(" + arith.fromInt("p.x") + ", " + rarity
+                            + "), jdiv(" + arith.fromInt("p.y") + ", " + rarity + "), jdiv(" + arith.fromInt("p.z") + ", " + rarity + "))")));
                 }
                 case ProgramNode.BlendDensity blend -> value(blend.child(), block, mode);
-                case ProgramNode.BlendAlpha ignored -> "1.0lf";
-                case ProgramNode.BlendOffset ignored -> "0.0lf";
+                case ProgramNode.BlendAlpha ignored -> arith.lit("1.0lf");
+                case ProgramNode.BlendOffset ignored -> arith.lit("0.0lf");
                 case ProgramNode.Beardifier ignored -> fresh(block, "beardifier(p)");
                 case ProgramNode.Spline spline -> splineCall(spline, block, mode);
                 case ProgramNode.Unary unary -> unary(unary, block, mode);
@@ -643,12 +700,12 @@ public final class FusedNoiseCompiler {
                 case ProgramNode.Ap2 ap2 -> ap2(ap2, block, mode);
                 case ProgramNode.Select select -> {
                     String selector = value(select.selector(), block, mode);
-                    yield branch(block, "(" + selector + " != 0.0lf)", select.whenTrue(), select.whenFalse(), mode);
+                    yield branch(block, "(" + arith.ne(selector, arith.lit("0.0lf")) + ")", select.whenTrue(), select.whenFalse(), mode);
                 }
                 case ProgramNode.RangeChoice range -> {
                     String input = value(range.input(), block, mode);
-                    yield branch(block, "(" + input + " >= " + dlit(range.minInclusive()) + " && " + input + " < "
-                            + dlit(range.maxExclusive()) + ")", range.whenInRange(), range.whenOutOfRange(), mode);
+                    yield branch(block, "(" + arith.ge(input, arith.dlit(range.minInclusive())) + " && " + arith.lt(input, arith.dlit(range.maxExclusive())) + ")",
+                            range.whenInRange(), range.whenOutOfRange(), mode);
                 }
                 case ProgramNode.Interpolated interpolated -> interpolated(interpolated, block, mode);
                 case ProgramNode.Marker marker -> marker(marker, block, mode);
@@ -659,7 +716,7 @@ public final class FusedNoiseCompiler {
 
         private String branch(Block block, String condition, ProgramNode whenTrue, ProgramNode whenFalse, Mode mode) {
             String name = "v" + (counter++);
-            block.line("precise double " + name + ";");
+            block.line(arith.preciseType() + " " + name + ";");
             block.line("if " + condition + " {");
             Block t = block.child();
             String tv = value(whenTrue, t, mode);
@@ -676,18 +733,19 @@ public final class FusedNoiseCompiler {
 
         private String unary(ProgramNode.Unary unary, Block block, Mode mode) {
             String v = value(unary.child(), block, mode);
+            String zero = arith.lit("0.0lf");
             return switch (unary.operation()) {
-                case "negate", "-" -> fresh(block, "-" + v);
-                case "abs" -> fresh(block, "abs(" + v + ")");
-                case "square" -> fresh(block, v + " * " + v);
-                case "cube" -> fresh(block, v + " * " + v + " * " + v);
-                case "floor" -> fresh(block, "floor(" + v + ")");
+                case "negate", "-" -> fresh(block, arith.neg(v));
+                case "abs" -> fresh(block, arith.abs(v));
+                case "square" -> fresh(block, arith.mul(v, v));
+                case "cube" -> fresh(block, arith.mul(arith.mul(v, v), v));
+                case "floor" -> fresh(block, arith.floor(v));
                 case "sqrt" -> fresh(block, "jsqrt(" + v + ")");
-                case "half_negative" -> fresh(block, "(" + v + " > 0.0lf ? " + v + " : " + v + " * 0.5lf)");
-                case "quarter_negative" -> fresh(block, "(" + v + " > 0.0lf ? " + v + " : " + v + " * 0.25lf)");
+                case "half_negative" -> fresh(block, "(" + arith.gt(v, zero) + " ? " + v + " : " + arith.mul(v, arith.lit("0.5lf")) + ")");
+                case "quarter_negative" -> fresh(block, "(" + arith.gt(v, zero) + " ? " + v + " : " + arith.mul(v, arith.lit("0.25lf")) + ")");
                 case "squeeze" -> {
-                    String c = fresh(block, "mclamp(" + v + ", -1.0lf, 1.0lf)");
-                    yield fresh(block, c + " * 0.5lf - jdiv(" + c + " * " + c + " * " + c + ", 24.0lf)");
+                    String c = fresh(block, "mclamp(" + v + ", " + arith.lit("-1.0lf") + ", " + arith.lit("1.0lf") + ")");
+                    yield fresh(block, arith.sub(arith.mul(c, arith.lit("0.5lf")), "jdiv(" + arith.mul(arith.mul(c, c), c) + ", " + arith.lit("24.0lf") + ")"));
                 }
                 default -> throw new UnsupportedFusedProgramException("Unknown unary " + unary.operation());
             };
@@ -697,9 +755,9 @@ public final class FusedNoiseCompiler {
             String a = value(binary.left(), block, mode);
             String b = value(binary.right(), block, mode);
             return switch (binary.operation()) {
-                case "+", "add" -> fresh(block, a + " + " + b);
-                case "-", "subtract" -> fresh(block, a + " - " + b);
-                case "*", "multiply" -> fresh(block, a + " * " + b);
+                case "+", "add" -> fresh(block, arith.add(a, b));
+                case "-", "subtract" -> fresh(block, arith.sub(a, b));
+                case "*", "multiply" -> fresh(block, arith.mul(a, b));
                 case "/", "divide" -> fresh(block, "jdiv(" + a + ", " + b + ")");
                 case "min" -> fresh(block, "jmin(" + a + ", " + b + ")");
                 case "max" -> fresh(block, "jmax(" + a + ", " + b + ")");
@@ -711,24 +769,24 @@ public final class FusedNoiseCompiler {
             String left = value(ap2.left(), block, mode);
             if (ap2.operation().equals("add")) {
                 String right = value(ap2.right(), block, mode);
-                return fresh(block, left + " + " + right);
+                return fresh(block, arith.add(left, right));
             }
             String name = "v" + (counter++);
-            block.line("precise double " + name + ";");
+            block.line(arith.preciseType() + " " + name + ";");
             String shortcut = switch (ap2.operation()) {
-                case "multiply" -> left + " == 0.0lf";
-                case "min" -> left + " < " + dlit(ap2.rightMinValue());
-                case "max" -> left + " > " + dlit(ap2.rightMaxValue());
+                case "multiply" -> arith.eq(left, arith.lit("0.0lf"));
+                case "min" -> arith.lt(left, arith.dlit(ap2.rightMinValue()));
+                case "max" -> arith.gt(left, arith.dlit(ap2.rightMaxValue()));
                 default -> throw new UnsupportedFusedProgramException("Unknown Ap2 " + ap2.operation());
             };
-            String shortValue = ap2.operation().equals("multiply") ? "0.0lf" : left;
+            String shortValue = ap2.operation().equals("multiply") ? arith.lit("0.0lf") : left;
             block.line("if (" + shortcut + ") {");
             block.line("    " + name + " = " + shortValue + ";");
             block.line("} else {");
             Block other = block.child();
             String right = value(ap2.right(), other, mode);
             String combined = switch (ap2.operation()) {
-                case "multiply" -> left + " * " + right;
+                case "multiply" -> arith.mul(left, right);
                 case "min" -> "jmin(" + left + ", " + right + ")";
                 default -> "jmax(" + left + ", " + right + ")";
             };
@@ -780,7 +838,7 @@ public final class FusedNoiseCompiler {
 
         private String splineCall(ProgramNode.Spline spline, Block block, Mode mode) {
             if (spline.spline() instanceof ProgramNode.SplineConstant constant) {
-                return fresh(block, "double(" + flit(constant.value()) + ")");
+                return fresh(block, arith.fromFloat(arith.flit(constant.value())));
             }
             // Distinct coordinates by semantic identity: equal subgraphs yield equal values.
             List<ProgramNode> coordinates = new ArrayList<>();
@@ -790,13 +848,13 @@ public final class FusedNoiseCompiler {
             if (coordinates.size() > 64) throw new UnsupportedFusedProgramException("Spline has more than 64 coordinates");
             maxSplineCoordinates = Math.max(maxSplineCoordinates, coordinates.size());
             String array = "cs" + (counter++);
-            block.line("float " + array + "[SPLINE_COORDS];");
+            block.line(arith.floatType() + " " + array + "[SPLINE_COORDS];");
             for (int i = 0; i < coordinates.size(); i++) {
                 String v = value(coordinates.get(i), block, mode);
-                block.line(array + "[" + i + "] = float(" + v + ");");
+                block.line(array + "[" + i + "] = " + arith.toFloat(v) + ";");
             }
             int record = tables.spline((ProgramNode.SplineMultipoint) spline.spline(), coordinates, indexOf);
-            return fresh(block, "double(splineEval(" + record + ", " + array + "))");
+            return fresh(block, arith.fromFloat("splineEval(" + record + ", " + array + ")"));
         }
 
         private void collectCoordinates(ProgramNode.SplineNode node, List<ProgramNode> out,

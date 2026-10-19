@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.compiler.vulkan.fused;
 
+import java.util.List;
+
 /**
  * GLSL for the fused SURFACE stage (Minecraft 1.21.1 SurfaceSystem.buildSurface
  * and SurfaceRules).  The kernel source is the same for every level: the rule
@@ -23,14 +25,18 @@ final class FusedSurfaceKernels {
     static final int SURF_HEIGHT_CHANGED = 0x100, SURF_STEEP_USED = 0x200;
 
     static String constants(FusedNoiseCompiler.Geometry g) {
+        return constants(FusedArith.of(FusedNoiseCompiler.Dialect.NATIVE_FP64), g);
+    }
+
+    static String constants(FusedArith arith, FusedNoiseCompiler.Geometry g) {
         int quartHeight = g.storageHeight() / 4;
         return "const int BIOME_QH = " + quartHeight + ";\n"
                 + "const int BIOME_WORDS = " + biomeWordsPerChunk(g) + ";\n"
-                + "const double LEGACY_DOUBLE_UNIT = " + FusedNoiseCompiler.dlit((double) 1.110223E-16F) + ";\n"
-                + "#define F_0_05 " + FusedNoiseCompiler.flit(0.05F) + "\n"
-                + "#define F_0_1 " + FusedNoiseCompiler.flit(0.1F) + "\n"
-                + "#define F_0_15 " + FusedNoiseCompiler.flit(0.15F) + "\n"
-                + "#define F_0_2 " + FusedNoiseCompiler.flit(0.2F) + "\n";
+                + "const " + arith.type() + " LEGACY_DOUBLE_UNIT = " + arith.dlit((double) 1.110223E-16F) + ";\n"
+                + "#define F_0_05 " + arith.flit(0.05F) + "\n"
+                + "#define F_0_1 " + arith.flit(0.1F) + "\n"
+                + "#define F_0_15 " + arith.flit(0.15F) + "\n"
+                + "#define F_0_2 " + arith.flit(0.2F) + "\n";
     }
 
     /** Biome ids are 16 bits each over a 6x6 quart-column window, two per uint. */
@@ -476,4 +482,271 @@ final class FusedSurfaceKernels {
         }
         #endif
         """;
+
+    /** The surface kernel text of a dialect: the native text, or the native text with {@link #IEEE_SWAPS}. */
+    static String body(FusedArith arith) {
+        return arith.dialect() == FusedNoiseCompiler.Dialect.IEEE_BITS ? FusedArith.Ieee.apply(BODY, IEEE_SWAPS) : BODY;
+    }
+
+    // The IEEE dialect: swaps of the native text, with the constants spelled as in the native text and turned
+    // into bits by FusedArith.Ieee.  Library functions keep their names in both dialects.
+
+    private static FusedArith.Swap ieee(String from, String to) { return FusedArith.Ieee.swap(from, to); }
+
+    /** Floating-point text of the surface kernels; applied in this order. */
+    static final List<FusedArith.Swap> IEEE_SWAPS = List.of(
+        ieee("bool cHaveSecondary; double cSecondary;", "bool cHaveSecondary; uvec2 cSecondary;"),
+        ieee("double cNoise[128];", "uvec2 cNoise[128];"),
+        ieee("""
+            double rngNextDouble(inout Rng r) {
+                if (r.isLegacy) {
+                    int i = legacyBits(r, 26);
+                    int j = legacyBits(r, 27);
+                    int64_t k = (int64_t(i) << 27) + int64_t(j);
+                    return double(k) * LEGACY_DOUBLE_UNIT;
+                }
+                return double(int64_t(uint64_t(xoroNext(r)) >> 11)) * 1.1102230246251565E-16lf;
+            }""",
+             """
+            uvec2 rngNextDouble(inout Rng r) {
+                if (r.isLegacy) {
+                    int i = legacyBits(r, 26);
+                    int j = legacyBits(r, 27);
+                    int64_t k = (int64_t(i) << 27) + int64_t(j);
+                    return wg_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(k))), LEGACY_DOUBLE_UNIT);
+                }
+                return wg_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(xoroNext(r)) >> 11)), 1.1102230246251565E-16lf);
+            }"""),
+        ieee("""
+            precise double fiddle(int64_t v) {
+                precise double d = double(int((v >> 24) & 1023l)) * 0.0009765625lf;
+                return (d - 0.5lf) * 0.9lf;
+            }""",
+             """
+            uvec2 fiddle(int64_t v) {
+                uvec2 d = wg_fp64_mul(wg_fp64_from_int(int((v >> 24) & 1023l)), 0.0009765625lf);
+                return wg_fp64_mul(wg_fp64_sub(d, 0.5lf), 0.9lf);
+            }"""),
+        ieee("""
+            precise double fiddledDistance(int64_t seed, int qx, int qy, int qz, double fx, double fy, double fz) {
+                int64_t v = lcgNext(seed, int64_t(qx));
+                v = lcgNext(v, int64_t(qy));
+                v = lcgNext(v, int64_t(qz));
+                v = lcgNext(v, int64_t(qx));
+                v = lcgNext(v, int64_t(qy));
+                v = lcgNext(v, int64_t(qz));
+                precise double d0 = fiddle(v);
+                v = lcgNext(v, seed);
+                precise double d1 = fiddle(v);
+                v = lcgNext(v, seed);
+                precise double d2 = fiddle(v);
+                precise double a = fz + d2;
+                precise double b = fy + d1;
+                precise double c = fx + d0;
+                precise double aa = a * a;
+                precise double bb = b * b;
+                precise double cc = c * c;
+                return aa + bb + cc;
+            }""",
+             """
+            uvec2 fiddledDistance(int64_t seed, int qx, int qy, int qz, uvec2 fx, uvec2 fy, uvec2 fz) {
+                int64_t v = lcgNext(seed, int64_t(qx));
+                v = lcgNext(v, int64_t(qy));
+                v = lcgNext(v, int64_t(qz));
+                v = lcgNext(v, int64_t(qx));
+                v = lcgNext(v, int64_t(qy));
+                v = lcgNext(v, int64_t(qz));
+                uvec2 d0 = fiddle(v);
+                v = lcgNext(v, seed);
+                uvec2 d1 = fiddle(v);
+                v = lcgNext(v, seed);
+                uvec2 d2 = fiddle(v);
+                uvec2 a = wg_fp64_add(fz, d2);
+                uvec2 b = wg_fp64_add(fy, d1);
+                uvec2 c = wg_fp64_add(fx, d0);
+                uvec2 aa = wg_fp64_mul(a, a);
+                uvec2 bb = wg_fp64_mul(b, b);
+                uvec2 cc = wg_fp64_mul(c, c);
+                return wg_fp64_add(wg_fp64_add(aa, bb), cc);
+            }"""),
+        ieee("""
+            int biomeAt(int x, int y, int z) {
+                int64_t seed = u64at(gSurf + 20);
+                int i = x - 2, j = y - 2, k = z - 2;
+                int l = i >> 2, i1 = j >> 2, j1 = k >> 2;
+                precise double d0 = double(i & 3) * 0.25lf;
+                precise double d1 = double(j & 3) * 0.25lf;
+                precise double d2 = double(k & 3) * 0.25lf;
+                int best = 0;
+                precise double d3 = bitsd(int64_t(0x7ff0000000000000ul));
+                for (int n = 0; n < 8; n++) {
+                    bool f0 = (n & 4) == 0, f1 = (n & 2) == 0, f2 = (n & 1) == 0;
+                    precise double d7 = fiddledDistance(seed, f0 ? l : l + 1, f1 ? i1 : i1 + 1, f2 ? j1 : j1 + 1,
+                            f0 ? d0 : d0 - 1.0lf, f1 ? d1 : d1 - 1.0lf, f2 ? d2 : d2 - 1.0lf);
+                    if (d3 > d7) { best = n; d3 = d7; }
+                }
+                return biomeIdAt((best & 4) == 0 ? l : l + 1, (best & 2) == 0 ? i1 : i1 + 1, (best & 1) == 0 ? j1 : j1 + 1);
+            }""",
+             """
+            int biomeAt(int x, int y, int z) {
+                int64_t seed = u64at(gSurf + 20);
+                int i = x - 2, j = y - 2, k = z - 2;
+                int l = i >> 2, i1 = j >> 2, j1 = k >> 2;
+                uvec2 d0 = wg_fp64_mul(wg_fp64_from_int(i & 3), 0.25lf);
+                uvec2 d1 = wg_fp64_mul(wg_fp64_from_int(j & 3), 0.25lf);
+                uvec2 d2 = wg_fp64_mul(wg_fp64_from_int(k & 3), 0.25lf);
+                int best = 0;
+                uvec2 d3 = uvec2(0u, 0x7ff00000u);
+                for (int n = 0; n < 8; n++) {
+                    bool f0 = (n & 4) == 0, f1 = (n & 2) == 0, f2 = (n & 1) == 0;
+                    uvec2 d7 = fiddledDistance(seed, f0 ? l : l + 1, f1 ? i1 : i1 + 1, f2 ? j1 : j1 + 1,
+                            f0 ? d0 : wg_fp64_sub(d0, 1.0lf), f1 ? d1 : wg_fp64_sub(d1, 1.0lf), f2 ? d2 : wg_fp64_sub(d2, 1.0lf));
+                    if (wg_fp64_less(d7, d3)) { best = n; d3 = d7; }
+                }
+                return biomeIdAt((best & 4) == 0 ? l : l + 1, (best & 2) == 0 ? i1 : i1 + 1, (best & 1) == 0 ? j1 : j1 + 1);
+            }"""),
+        ieee("""
+            precise double d1 = jmin(abs(normalNoise(sh(14), double(gX), 0.0lf, double(gZ)) * 8.25lf),
+                        normalNoise(sh(12), double(gX) * 0.2lf, 0.0lf, double(gZ) * 0.2lf) * 15.0lf);""",
+             """
+            uvec2 d1 = jmin(wg_fp64_abs(wg_fp64_mul(normalNoise(sh(14), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
+                        wg_fp64_mul(normalNoise(sh(12), wg_fp64_mul(wg_fp64_from_int(gX), 0.2lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 0.2lf)), 15.0lf));"""),
+        ieee("if (!(d1 <= 0.0lf)) {", "if (!wg_fp64_less_equal(d1, 0.0lf)) {"),
+        ieee("precise double d4 = abs(normalNoise(sh(13), double(gX) * 0.75lf, 0.0lf, double(gZ) * 0.75lf) * 1.5lf);", "uvec2 d4 = wg_fp64_abs(wg_fp64_mul(normalNoise(sh(13), wg_fp64_mul(wg_fp64_from_int(gX), 0.75lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 0.75lf)), 1.5lf));"),
+        ieee("precise double d5 = 64.0lf + jmin(d1 * d1 * 2.5lf, ceil(d4 * 50.0lf) + 24.0lf);", "uvec2 d5 = wg_fp64_add(64.0lf, jmin(wg_fp64_mul(wg_fp64_mul(d1, d1), 2.5lf), wg_fp64_add(wgf_fp64_ceil(wg_fp64_mul(d4, 50.0lf)), 24.0lf)));"),
+        ieee("""
+            precise double simplexOctaves(int S, double x, double y) {
+                int n = int(dtab[S]);
+                precise double result = 0.0lf;
+                precise double d1 = dtab[S + 1];
+                precise double d2 = dtab[S + 2];
+                for (int i = 0; i < n; i++) {
+                    int permBase = int(dtab[S + 3 + i]);
+                    if (permBase >= 0) result += simplex2D(permBase, x * d1 + 0.0lf, y * d1 + 0.0lf) * d2;
+                    d1 = d1 * 0.5lf;
+                    d2 = d2 * 2.0lf;
+                }
+                return result;
+            }""",
+             """
+            uvec2 simplexOctaves(int S, uvec2 x, uvec2 y) {
+                int n = wgf_fp64_to_i32_java(dtab[S]);
+                uvec2 result = 0.0lf;
+                uvec2 d1 = dtab[S + 1];
+                uvec2 d2 = dtab[S + 2];
+                for (int i = 0; i < n; i++) {
+                    int permBase = wgf_fp64_to_i32_java(dtab[S + 3 + i]);
+                    if (permBase >= 0) result = wg_fp64_add(result, wg_fp64_mul(simplex2D(permBase, wg_fp64_add(wg_fp64_mul(x, d1), 0.0lf), wg_fp64_add(wg_fp64_mul(y, d1), 0.0lf)), d2));
+                    d1 = wg_fp64_mul(d1, 0.5lf);
+                    d2 = wg_fp64_mul(d2, 2.0lf);
+                }
+                return result;
+            }"""),
+        ieee("""
+            precise float biomeTemperature(int biome, int x, int y, int z) {
+                int T = sh(6) + biome * 2;
+                precise float f = uintBitsToFloat(perm[T]);
+                if ((int(perm[T + 1]) & 1) != 0) {
+                    precise double d0 = simplexOctaves(sh(26), double(x) * 0.05lf, double(z) * 0.05lf) * 7.0lf;
+                    precise double d1 = simplexOctaves(sh(27), double(x) * 0.2lf, double(z) * 0.2lf);
+                    precise double d2 = d0 + d1;
+                    if (d2 < 0.3lf) {
+                        precise double d3 = simplexOctaves(sh(27), double(x) * 0.09lf, double(z) * 0.09lf);
+                        if (d3 < 0.8lf) f = F_0_2;
+                    }
+                }
+                if (y > 80) {
+                    precise float f1 = float(simplexOctaves(sh(25), double(float(x) * 0.125), double(float(z) * 0.125)) * 8.0lf);
+                    precise float t = (f1 + float(y) - 80.0) * F_0_05;
+                    return f - jdivf(t, 40.0);
+                }
+                return f;
+            }""",
+             """
+            uint biomeTemperature(int biome, int x, int y, int z) {
+                int T = sh(6) + biome * 2;
+                uint f = perm[T];
+                if ((int(perm[T + 1]) & 1) != 0) {
+                    uvec2 d0 = wg_fp64_mul(simplexOctaves(sh(26), wg_fp64_mul(wg_fp64_from_int(x), 0.05lf), wg_fp64_mul(wg_fp64_from_int(z), 0.05lf)), 7.0lf);
+                    uvec2 d1 = simplexOctaves(sh(27), wg_fp64_mul(wg_fp64_from_int(x), 0.2lf), wg_fp64_mul(wg_fp64_from_int(z), 0.2lf));
+                    uvec2 d2 = wg_fp64_add(d0, d1);
+                    if (wg_fp64_less(d2, 0.3lf)) {
+                        uvec2 d3 = simplexOctaves(sh(27), wg_fp64_mul(wg_fp64_from_int(x), 0.09lf), wg_fp64_mul(wg_fp64_from_int(z), 0.09lf));
+                        if (wg_fp64_less(d3, 0.8lf)) f = F_0_2;
+                    }
+                }
+                if (y > 80) {
+                    uint f1 = wg_fp64_to_fp32(wg_fp64_mul(simplexOctaves(sh(25), wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(x), 0.125f)), wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(z), 0.125f))), 8.0lf));
+                    uint t = wg_fp32_mul(wg_fp32_sub(wg_fp32_add(f1, wg_fp32_from_int(y)), 80.0f), F_0_05);
+                    return wg_fp32_sub(f, jdivf(t, 40.0f));
+                }
+                return f;
+            }"""),
+        ieee("precise double d0 = normalNoise(sh(9), double(gX), 0.0lf, double(gZ));", "uvec2 d0 = normalNoise(sh(9), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ));"),
+        ieee("return jd2i(d0 * 2.75lf + 3.0lf + rngNextDouble(r) * 0.25lf);", "return jd2i(wg_fp64_add(wg_fp64_add(wg_fp64_mul(d0, 2.75lf), 3.0lf), wg_fp64_mul(rngNextDouble(r), 0.25lf)));"),
+        ieee("double surfaceSecondary() {", "uvec2 surfaceSecondary() {"),
+        ieee("cSecondary = normalNoise(sh(10), double(gX), 0.0lf, double(gZ));", "cSecondary = normalNoise(sh(10), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ));"),
+        ieee("precise double fx = double(float(gX & 15) * 0.0625);", "uvec2 fx = wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(gX & 15), 0.0625f));"),
+        ieee("precise double fz = double(float(gZ & 15) * 0.0625);", "uvec2 fz = wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(gZ & 15), 0.0625f));"),
+        ieee("precise double a = lerpd(fx, double(prelimCorner(0, 0)), double(prelimCorner(1, 0)));", "uvec2 a = lerpd(fx, wg_fp64_from_int(prelimCorner(0, 0)), wg_fp64_from_int(prelimCorner(1, 0)));"),
+        ieee("precise double b = lerpd(fx, double(prelimCorner(0, 1)), double(prelimCorner(1, 1)));", "uvec2 b = lerpd(fx, wg_fp64_from_int(prelimCorner(0, 1)), wg_fp64_from_int(prelimCorner(1, 1)));"),
+        ieee("""
+            bool noiseCondition(int slot, int bounds) {
+                int w = slot >> 5;
+                uint bit = 1u << uint(slot & 31);
+                if ((cNoiseKnown[w] & bit) == 0u) {
+                    cNoiseKnown[w] |= bit;
+                    cNoise[slot] = normalNoise(int(perm[sh(3) + slot]), double(gX), 0.0lf, double(gZ));
+                }
+                double d = cNoise[slot];
+                int B = sh(29) + bounds * 2;
+                return d >= dtab[B] && d <= dtab[B + 1];
+            }""",
+             """
+            bool noiseCondition(int slot, int bounds) {
+                int w = slot >> 5;
+                uint bit = 1u << uint(slot & 31);
+                if ((cNoiseKnown[w] & bit) == 0u) {
+                    cNoiseKnown[w] |= bit;
+                    cNoise[slot] = normalNoise(int(perm[sh(3) + slot]), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ));
+                }
+                uvec2 d = cNoise[slot];
+                int B = sh(29) + bounds * 2;
+                return wg_fp64_less_equal(dtab[B], d) && wg_fp64_less_equal(d, dtab[B + 1]);
+            }"""),
+        ieee("precise double d0 = mapd(double(cY), double(trueAtAndBelow), double(falseAtAndAbove), 1.0lf, 0.0lf);", "uvec2 d0 = mapd(wg_fp64_from_int(cY), wg_fp64_from_int(trueAtAndBelow), wg_fp64_from_int(falseAtAndAbove), 1.0lf, 0.0lf);"),
+        ieee("return double(rngNextFloat(r)) < d0;", "return wg_fp64_less(wg_fp64_from_fp32(rngNextFloat(r)), d0);"),
+        ieee("precise double v = normalNoise(sh(11), double(gX), 0.0lf, double(gZ)) * 4.0lf;", "uvec2 v = wg_fp64_mul(normalNoise(sh(11), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 4.0lf);"),
+        ieee("precise double fl = floor(v);", "uvec2 fl = wg_fp64_floor(v);"),
+        ieee("cBand = jd2i((v - fl) >= 0.5lf ? fl + 1.0lf : fl);", "cBand = jd2i(wg_fp64_less_equal(0.5lf, wg_fp64_sub(v, fl)) ? wg_fp64_add(fl, 1.0lf) : fl);"),
+        ieee("case 8: r = !(biomeTemperature(blockBiome(), gX, cY, gZ) >= F_0_15); break;", "case 8: r = !wg_fp32_less_equal(F_0_15, biomeTemperature(blockBiome(), gX, cY, gZ)); break;"),
+        ieee("int k = c == 0 ? 0 : jd2i(mapd(surfaceSecondary(), -1.0lf, 1.0lf, 0.0lf, double(c)));", "int k = c == 0 ? 0 : jd2i(mapd(surfaceSecondary(), -1.0lf, 1.0lf, 0.0lf, wg_fp64_from_int(c)));"),
+        ieee("""
+            precise double d1 = jmin(abs(normalNoise(sh(17), double(gX), 0.0lf, double(gZ)) * 8.25lf),
+                        normalNoise(sh(15), double(gX) * 1.28lf, 0.0lf, double(gZ) * 1.28lf) * 15.0lf);""",
+             """
+            uvec2 d1 = jmin(wg_fp64_abs(wg_fp64_mul(normalNoise(sh(17), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
+                        wg_fp64_mul(normalNoise(sh(15), wg_fp64_mul(wg_fp64_from_int(gX), 1.28lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 1.28lf)), 15.0lf));"""),
+        ieee("if (!(d1 <= 1.8lf)) {", "if (!wg_fp64_less_equal(d1, 1.8lf)) {"),
+        ieee("precise double d5 = abs(normalNoise(sh(16), double(gX) * 1.17lf, 0.0lf, double(gZ) * 1.17lf) * 1.5lf);", "uvec2 d5 = wg_fp64_abs(wg_fp64_mul(normalNoise(sh(16), wg_fp64_mul(wg_fp64_from_int(gX), 1.17lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 1.17lf)), 1.5lf));"),
+        ieee("precise double d6 = jmin(d1 * d1 * 1.2lf, ceil(d5 * 40.0lf) + 14.0lf);", "uvec2 d6 = jmin(wg_fp64_mul(wg_fp64_mul(d1, d1), 1.2lf), wg_fp64_add(wgf_fp64_ceil(wg_fp64_mul(d5, 40.0lf)), 14.0lf));"),
+        ieee("if (biomeTemperature(biome, gX, 63, gZ) > F_0_1) d6 -= 2.0lf;", "if (wg_fp32_less(F_0_1, biomeTemperature(biome, gX, 63, gZ))) d6 = wg_fp64_sub(d6, 2.0lf);"),
+        ieee("precise double d2;", "uvec2 d2;"),
+        ieee("""
+            if (d6 > 2.0lf) {
+                        d2 = double(SEA_LEVEL) - d6 - 7.0lf;
+                        d6 += double(SEA_LEVEL);
+                    } else {
+                        d6 = 0.0lf;
+                        d2 = 0.0lf;""",
+             """
+            if (wg_fp64_less(2.0lf, d6)) {
+                        d2 = wg_fp64_sub(wg_fp64_sub(wg_fp64_from_int(SEA_LEVEL), d6), 7.0lf);
+                        d6 = wg_fp64_add(d6, wg_fp64_from_int(SEA_LEVEL));
+                    } else {
+                        d6 = 0.0lf;
+                        d2 = 0.0lf;"""),
+        ieee("if ((f & 4) == 0 && l < top && rngNextDouble(r) > 0.01lf) hit = true;", "if ((f & 4) == 0 && l < top && wg_fp64_less(0.01lf, rngNextDouble(r))) hit = true;"),
+        ieee("else if ((f & 8) != 0 && l > bottom && l < SEA_LEVEL && d2 != 0.0lf && rngNextDouble(r) > 0.15lf) hit = true;", "else if ((f & 8) != 0 && l > bottom && l < SEA_LEVEL && !wg_fp64_equal(d2, 0.0lf) && wg_fp64_less(0.15lf, rngNextDouble(r))) hit = true;")
+    );
 }

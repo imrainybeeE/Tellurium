@@ -3,6 +3,8 @@ package dev.tellurium.compiler.vulkan.fused;
 
 import dev.tellurium.semantic.snapshot.PositionalRandomFactorySnapshot;
 
+import java.util.List;
+
 /**
  * GLSL kernel templates for the fused NOISE route.  Each block mirrors a
  * vanilla 1.21.1 method line by line: NoiseBasedAquifer.computeSubstance /
@@ -17,6 +19,10 @@ final class FusedKernels {
 
     /** Constants, setup and helpers that generated root functions may call. */
     static String prelude(FusedNoiseCompiler.Geometry g, FusedNoiseCompiler.Request request, int beardKernelIndex) {
+        return prelude(FusedArith.of(FusedNoiseCompiler.Dialect.NATIVE_FP64), g, request, beardKernelIndex);
+    }
+
+    static String prelude(FusedArith arith, FusedNoiseCompiler.Geometry g, FusedNoiseCompiler.Request request, int beardKernelIndex) {
         var p = request.palette();
         var settings = request.settings();
         StringBuilder s = new StringBuilder();
@@ -45,9 +51,9 @@ final class FusedKernels {
         s.append("const int BEARD_KERNEL = ").append(beardKernelIndex).append(";\n");
         appendRandom(s, "AQ", request.aquiferRandom());
         appendRandom(s, "ORE", request.oreRandom());
-        s.append("const double FLOWING_UPDATE_SIMILARITY = ")
-                .append(FusedNoiseCompiler.dlit(1.0 - (double) Math.abs(144 - 100) / 25.0)).append(";\n");
-        s.append(PRELUDE_BODY);
+        s.append("const ").append(arith.type()).append(" FLOWING_UPDATE_SIMILARITY = ")
+                .append(arith.dlit(1.0 - (double) Math.abs(144 - 100) / 25.0)).append(";\n");
+        s.append(arith.dialect() == FusedNoiseCompiler.Dialect.IEEE_BITS ? PRELUDE_BODY_IEEE : PRELUDE_BODY);
         return s.toString();
     }
 
@@ -58,27 +64,61 @@ final class FusedKernels {
 
     static String kernels(int flatCount, int interpCount, int xzCount, FusedNoiseCompiler.FluidUpdates fluidUpdates,
                           FusedNoiseCompiler.PreliminarySurface preliminarySurface) {
+        return kernels(FusedArith.of(FusedNoiseCompiler.Dialect.NATIVE_FP64), flatCount, interpCount, xzCount, fluidUpdates, preliminarySurface);
+    }
+
+    static String kernels(FusedArith arith, int flatCount, int interpCount, int xzCount, FusedNoiseCompiler.FluidUpdates fluidUpdates,
+                          FusedNoiseCompiler.PreliminarySurface preliminarySurface) {
+        return kernels(arith, flatCount, interpCount, xzCount, fluidUpdates, preliminarySurface, System.lineSeparator());
+    }
+
+    /** {@code hostLineSeparator} ends the store lines of the native text only; it is a parameter so that a test can pretend to be another host. */
+    static String kernels(FusedArith arith, int flatCount, int interpCount, int xzCount, FusedNoiseCompiler.FluidUpdates fluidUpdates,
+                          FusedNoiseCompiler.PreliminarySurface preliminarySurface, String hostLineSeparator) {
+        // The native text has always ended these lines with the host's separator, and the tested lists are keyed
+        // on that text; the IEEE text is the same on every host.
+        String lineEnd = arith.dialect() == FusedNoiseCompiler.Dialect.IEEE_BITS ? "\n" : hostLineSeparator;
         StringBuilder s = new StringBuilder();
         StringBuilder columnStores = new StringBuilder();
         for (int f = 0; f < flatCount; f++) {
             columnStores.append("columns[((int(slot) * FLATS + ").append(f).append(") * COLS + qi) * COLS + qj] = flat_")
-                    .append(f).append("_column(p);").append(System.lineSeparator()).append("            ");
+                    .append(f).append("_column(p);").append(lineEnd).append("            ");
         }
         StringBuilder cornerStores = new StringBuilder();
         for (int k = 0; k < interpCount; k++) {
             cornerStores.append("corners[(((int(slot) * INTERPS + ").append(k).append(") * CNY + iy) * CNX + ix) * CNX + iz] = interp_")
-                    .append(k).append("_corner(p);").append(System.lineSeparator()).append("            ");
+                    .append(k).append("_corner(p);").append(lineEnd).append("            ");
         }
         StringBuilder xzStores = new StringBuilder();
         for (int k = 0; k < xzCount; k++) {
             xzStores.append("xzcache[(int(slot) * XZS + ").append(k).append(") * 256 + col] = xz_").append(k)
-                    .append("_col(p);").append(System.lineSeparator()).append("            ");
+                    .append("_col(p);").append(lineEnd).append("            ");
         }
-        String body = fluidUpdates == FusedNoiseCompiler.FluidUpdates.WHERE_NEIGHBOURS_DIFFER ? comparingFluidUpdates(KERNEL_BODY) : KERNEL_BODY;
-        if (preliminarySurface == FusedNoiseCompiler.PreliminarySurface.LEVEL_FUNCTION) body = skippingAboveSurface(body);
+        String body = kernelBody(arith, fluidUpdates, preliminarySurface);
         s.append(body.replace("COLUMN_STORES", columnStores.toString()).replace("CORNER_STORES", cornerStores.toString())
                 .replace("XZ_STORES", xzStores.toString()));
         return s.toString();
+    }
+
+    /**
+     * The kernel text before the store lines are put in.  The order is fixed: the native body, the native
+     * variant rewrites, then the swaps to IEEE text, which therefore see the text of the variant they are applied to.
+     */
+    static String kernelBody(FusedArith arith, FusedNoiseCompiler.FluidUpdates fluidUpdates,
+                             FusedNoiseCompiler.PreliminarySurface preliminarySurface) {
+        String body = nativeBody(fluidUpdates, preliminarySurface);
+        if (arith.dialect() == FusedNoiseCompiler.Dialect.IEEE_BITS) {
+            body = FusedArith.Ieee.apply(body, KERNEL_COMMON);
+            body = FusedArith.Ieee.apply(body, fluidUpdates == FusedNoiseCompiler.FluidUpdates.WHERE_NEIGHBOURS_DIFFER ? KERNEL_COMPARING_ONLY : KERNEL_BETWEEN_ONLY);
+        }
+        return body;
+    }
+
+    /** The native kernel text of a variant, before the store lines are put in. */
+    static String nativeBody(FusedNoiseCompiler.FluidUpdates fluidUpdates, FusedNoiseCompiler.PreliminarySurface preliminarySurface) {
+        String body = fluidUpdates == FusedNoiseCompiler.FluidUpdates.WHERE_NEIGHBOURS_DIFFER ? comparingFluidUpdates(KERNEL_BODY) : KERNEL_BODY;
+        if (preliminarySurface == FusedNoiseCompiler.PreliminarySurface.LEVEL_FUNCTION) body = skippingAboveSurface(body);
+        return body;
     }
 
     /**
@@ -188,11 +228,286 @@ final class FusedKernels {
         """);
     }
 
-    private static String swap(String text, String from, String to) {
+    static String swap(String text, String from, String to) {
         int at = text.indexOf(from);
         if (at < 0 || text.indexOf(from, at + 1) >= 0) throw new IllegalStateException("Kernel text to replace is not there exactly once: " + from);
         return text.substring(0, at) + to + text.substring(at + from.length());
     }
+
+    // ----------------------------------------------------------------------------------------------
+    // The IEEE dialect.  The prelude has a text of its own; the kernel text is the native text with the
+    // swaps below.  Constants are spelled as in the native text and turned into bits by FusedArith.Ieee.
+    // Library functions keep their names in both dialects, so a call such as jdiv or clampedMap is unchanged.
+
+    private static FusedArith.Swap ieee(String from, String to) { return FusedArith.Ieee.swap(from, to); }
+
+    /** Floating-point text of every kernel variant; applied in this order after the native variant rewrites. */
+    static final List<FusedArith.Swap> KERNEL_COMMON = List.of(
+        ieee("precise double d0 = root_spread_point(ivec3(k, l, i1)) * 10.0lf;", "uvec2 d0 = wg_fp64_mul(root_spread_point(ivec3(k, l, i1)), 10.0lf);"),
+        ieee("int l1 = mfloor(jdiv(d0, 3.0lf)) * 3;", "int l1 = mfloor(jdiv(d0, 3.0lf)) * 3;"),
+        ieee("""
+            int computeSurfaceLevel(int x, int y, int z, ivec2 global, int prelimMin, bool neighborSurface) {
+                ivec3 q = ivec3(x, y, z);
+                precise double d0;
+                precise double d1;
+                if (root_erosion_point(q) < -0.22499999403953552lf && root_depth_point(q) > 0.8999999761581421lf) {
+                    d0 = -1.0lf;
+                    d1 = -1.0lf;
+                } else {
+                    int i = prelimMin + 8 - y;
+                    precise double d2 = neighborSurface ? clampedMap(double(i), 0.0lf, 64.0lf, 1.0lf, 0.0lf) : 0.0lf;
+                    precise double d3 = mclamp(root_flood_point(q), -1.0lf, 1.0lf);
+                    precise double d4 = mapd(d2, 1.0lf, 0.0lf, -0.3lf, 0.8lf);
+                    precise double d5 = mapd(d2, 1.0lf, 0.0lf, -0.8lf, 0.4lf);
+                    d0 = d3 - d5;
+                    d1 = d3 - d4;
+                }
+                if (d1 > 0.0lf) return global.x;
+                if (d0 > 0.0lf) return randomizedSurfaceLevel(x, y, z, prelimMin);
+                return -32512;
+            }""",
+             """
+            int computeSurfaceLevel(int x, int y, int z, ivec2 global, int prelimMin, bool neighborSurface) {
+                ivec3 q = ivec3(x, y, z);
+                uvec2 d0;
+                uvec2 d1;
+                if (wg_fp64_less(root_erosion_point(q), -0.22499999403953552lf) && wg_fp64_less(0.8999999761581421lf, root_depth_point(q))) {
+                    d0 = -1.0lf;
+                    d1 = -1.0lf;
+                } else {
+                    int i = prelimMin + 8 - y;
+                    uvec2 d2 = neighborSurface ? clampedMap(wg_fp64_from_int(i), 0.0lf, 64.0lf, 1.0lf, 0.0lf) : 0.0lf;
+                    uvec2 d3 = mclamp(root_flood_point(q), -1.0lf, 1.0lf);
+                    uvec2 d4 = mapd(d2, 1.0lf, 0.0lf, -0.3lf, 0.8lf);
+                    uvec2 d5 = mapd(d2, 1.0lf, 0.0lf, -0.8lf, 0.4lf);
+                    d0 = wg_fp64_sub(d3, d5);
+                    d1 = wg_fp64_sub(d3, d4);
+                }
+                if (wg_fp64_less(0.0lf, d1)) return global.x;
+                if (wg_fp64_less(0.0lf, d0)) return randomizedSurfaceLevel(x, y, z, prelimMin);
+                return -32512;
+            }"""),
+        ieee("precise double d0 = root_lava_point(ivec3(jfloorDiv(x, 64), jfloorDiv(y, 40), jfloorDiv(z, 64)));", "uvec2 d0 = root_lava_point(ivec3(jfloorDiv(x, 64), jfloorDiv(y, 40), jfloorDiv(z, 64)));"),
+        ieee("if (abs(d0) > 0.3lf) type = 2;", "if (wg_fp64_less(0.3lf, wg_fp64_abs(d0))) type = 2;"),
+        ieee("precise double similarity(int a, int b) { return 1.0lf - jdiv(double(abs(b - a)), 25.0lf); }", "uvec2 similarity(int a, int b) { return wg_fp64_sub(1.0lf, jdiv(wg_fp64_from_int(abs(b - a)), 25.0lf)); }"),
+        ieee("""
+            precise double calculatePressure(ivec3 p, inout double barrier, ivec2 s1, ivec2 s2) {
+                int i = p.y;
+                int bs = statusAt(s1, i);
+                int bs1 = statusAt(s2, i);
+                if ((!isLavaBlock(bs) || !isWaterBlock(bs1)) && (!isWaterBlock(bs) || !isLavaBlock(bs1))) {
+                    int j = abs(s1.x - s2.x);
+                    if (j == 0) return 0.0lf;
+                    precise double d0 = 0.5lf * double(s1.x + s2.x);
+                    precise double d1 = double(i) + 0.5lf - d0;
+                    precise double d2 = double(j) * 0.5lf;
+                    precise double d9 = d2 - abs(d1);
+                    precise double d10;
+                    if (d1 > 0.0lf) {
+                        precise double d11 = 0.0lf + d9;
+                        d10 = d11 > 0.0lf ? jdiv(d11, 1.5lf) : jdiv(d11, 2.5lf);
+                    } else {
+                        precise double d15 = 3.0lf + d9;
+                        d10 = d15 > 0.0lf ? jdiv(d15, 3.0lf) : jdiv(d15, 10.0lf);
+                    }
+                    precise double d12;
+                    if (!(d10 < -2.0lf) && !(d10 > 2.0lf)) {
+                        if (isnan(barrier)) barrier = root_barrier_value(p);
+                        d12 = barrier;
+                    } else {
+                        d12 = 0.0lf;
+                    }
+                    return 2.0lf * (d12 + d10);
+                }
+                return 2.0lf;
+            }""",
+             """
+            uvec2 calculatePressure(ivec3 p, inout uvec2 barrier, ivec2 s1, ivec2 s2) {
+                int i = p.y;
+                int bs = statusAt(s1, i);
+                int bs1 = statusAt(s2, i);
+                if ((!isLavaBlock(bs) || !isWaterBlock(bs1)) && (!isWaterBlock(bs) || !isLavaBlock(bs1))) {
+                    int j = abs(s1.x - s2.x);
+                    if (j == 0) return 0.0lf;
+                    uvec2 d0 = wg_fp64_mul(0.5lf, wg_fp64_from_int(s1.x + s2.x));
+                    uvec2 d1 = wg_fp64_sub(wg_fp64_add(wg_fp64_from_int(i), 0.5lf), d0);
+                    uvec2 d2 = wg_fp64_mul(wg_fp64_from_int(j), 0.5lf);
+                    uvec2 d9 = wg_fp64_sub(d2, wg_fp64_abs(d1));
+                    uvec2 d10;
+                    if (wg_fp64_less(0.0lf, d1)) {
+                        uvec2 d11 = wg_fp64_add(0.0lf, d9);
+                        d10 = wg_fp64_less(0.0lf, d11) ? jdiv(d11, 1.5lf) : jdiv(d11, 2.5lf);
+                    } else {
+                        uvec2 d15 = wg_fp64_add(3.0lf, d9);
+                        d10 = wg_fp64_less(0.0lf, d15) ? jdiv(d15, 3.0lf) : jdiv(d15, 10.0lf);
+                    }
+                    uvec2 d12;
+                    if (!wg_fp64_less(d10, -2.0lf) && !wg_fp64_less(2.0lf, d10)) {
+                        if (wg_fp64_nan(barrier)) barrier = root_barrier_value(p);
+                        d12 = barrier;
+                    } else {
+                        d12 = 0.0lf;
+                    }
+                    return wg_fp64_mul(2.0lf, wg_fp64_add(d12, d10));
+                }
+                return 2.0lf;
+            }"""),
+        ieee("int computeSubstance(ivec3 p, double density, out bool schedule) {", "int computeSubstance(ivec3 p, uvec2 density, out bool schedule) {"),
+        ieee("if (density > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, density)) return -1;"),
+        ieee("precise double d1 = similarity(k1, l1);", "uvec2 d1 = similarity(k1, l1);"),
+        ieee("if (d1 <= 0.0lf) {", "if (wg_fp64_less_equal(d1, 0.0lf)) {"),
+        ieee("double barrier = bitsd(int64_t(0x7ff8000000000000ul));", "uvec2 barrier = uvec2(0u, 0x7ff80000u);"),
+        ieee("precise double d2 = d1 * calculatePressure(p, barrier, s1, s2);", "uvec2 d2 = wg_fp64_mul(d1, calculatePressure(p, barrier, s1, s2));"),
+        ieee("if (density + d2 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d2))) return -1;"),
+        ieee("precise double d0 = similarity(k1, i2);", "uvec2 d0 = similarity(k1, i2);"),
+        ieee("if (d0 > 0.0lf) {", "if (wg_fp64_less(0.0lf, d0)) {"),
+        ieee("precise double d3 = d1 * d0 * calculatePressure(p, barrier, s1, s3);", "uvec2 d3 = wg_fp64_mul(wg_fp64_mul(d1, d0), calculatePressure(p, barrier, s1, s3));"),
+        ieee("if (density + d3 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d3))) return -1;"),
+        ieee("precise double d4 = similarity(l1, i2);", "uvec2 d4 = similarity(l1, i2);"),
+        ieee("if (d4 > 0.0lf) {", "if (wg_fp64_less(0.0lf, d4)) {"),
+        ieee("precise double d5 = d1 * d4 * calculatePressure(p, barrier, s2, s3);", "uvec2 d5 = wg_fp64_mul(wg_fp64_mul(d1, d4), calculatePressure(p, barrier, s2, s3));"),
+        ieee("if (density + d5 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d5))) return -1;"),
+        ieee("""
+            int oreVein(ivec3 p) {
+                precise double d0 = root_toggle_value(p);
+                int i = p.y;
+                bool copper = d0 > 0.0lf;
+                precise double d1 = abs(d0);
+                int maxY = copper ? 50 : -8;
+                int minY = copper ? 0 : -60;
+                int j = maxY - i;
+                int k = i - minY;
+                if (k < 0 || j < 0) return -1;
+                int l = min(j, k);
+                precise double d2 = clampedMap(double(l), 0.0lf, 20.0lf, -0.2lf, 0.0lf);
+                if (d1 + d2 < 0.4000000059604645lf) return -1;
+                Rng r = rngAt(ORE_LEGACY, ORE_SEED, ORE_LO, ORE_HI, p.x, i, p.z);
+                if (rngNextFloat(r) > 0.7) return -1;
+                if (root_ridged_value(p) >= 0.0lf) return -1;
+                precise double d3 = clampedMap(d1, 0.4000000059604645lf, 0.6000000238418579lf, 0.10000000149011612lf, 0.30000001192092896lf);
+                if (double(rngNextFloat(r)) < d3 && root_gap_value(p) > -0.30000001192092896lf) {
+                    bool raw = rngNextFloat(r) < 0.02;
+                    return copper ? (raw ? P_RAW_COPPER : P_COPPER_ORE) : (raw ? P_RAW_IRON : P_IRON_ORE);
+                }
+                return copper ? P_GRANITE : P_TUFF;
+            }""",
+             """
+            int oreVein(ivec3 p) {
+                uvec2 d0 = root_toggle_value(p);
+                int i = p.y;
+                bool copper = wg_fp64_less(0.0lf, d0);
+                uvec2 d1 = wg_fp64_abs(d0);
+                int maxY = copper ? 50 : -8;
+                int minY = copper ? 0 : -60;
+                int j = maxY - i;
+                int k = i - minY;
+                if (k < 0 || j < 0) return -1;
+                int l = min(j, k);
+                uvec2 d2 = clampedMap(wg_fp64_from_int(l), 0.0lf, 20.0lf, -0.2lf, 0.0lf);
+                if (wg_fp64_less(wg_fp64_add(d1, d2), 0.4000000059604645lf)) return -1;
+                Rng r = rngAt(ORE_LEGACY, ORE_SEED, ORE_LO, ORE_HI, p.x, i, p.z);
+                if (wg_fp32_less(0.7f, rngNextFloat(r))) return -1;
+                if (wg_fp64_less_equal(0.0lf, root_ridged_value(p))) return -1;
+                uvec2 d3 = clampedMap(d1, 0.4000000059604645lf, 0.6000000238418579lf, 0.10000000149011612lf, 0.30000001192092896lf);
+                if (wg_fp64_less(wg_fp64_from_fp32(rngNextFloat(r)), d3) && wg_fp64_less(-0.30000001192092896lf, root_gap_value(p))) {
+                    bool raw = wg_fp32_less(rngNextFloat(r), 0.02f);
+                    return copper ? (raw ? P_RAW_COPPER : P_COPPER_ORE) : (raw ? P_RAW_IRON : P_IRON_ORE);
+                }
+                return copper ? P_GRANITE : P_TUFF;
+            }"""),
+        ieee("precise double density = root_final_cell(p) + beardifier(p);", "uvec2 density = wg_fp64_add(root_final_cell(p), beardifier(p));")
+    );
+
+    /** The schedule line of the rule before Minecraft 1.21.2. */
+    static final List<FusedArith.Swap> KERNEL_BETWEEN_ONLY = List.of(
+        ieee("schedule = d1 >= FLOWING_UPDATE_SIMILARITY;", "schedule = wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, d1);")
+    );
+
+    /** The floating-point lines that the 1.21.2 fluid-update rewrite inserts. */
+    static final List<FusedArith.Swap> KERNEL_COMPARING_ONLY = List.of(
+        ieee("schedule = d1 >= FLOWING_UPDATE_SIMILARITY && !sameStatus(s1, ivec2(aquifer[k2 + 3], aquifer[k2 + 4]));", "schedule = wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, d1) && !sameStatus(s1, ivec2(aquifer[k2 + 3], aquifer[k2 + 4]));"),
+        ieee("&& !(d4 >= FLOWING_UPDATE_SIMILARITY && !sameStatus(s2, s3))", "&& !(wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, d4) && !sameStatus(s2, s3))"),
+        ieee("&& !(d0 >= FLOWING_UPDATE_SIMILARITY && !sameStatus(s1, s3))) {", "&& !(wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, d0) && !sameStatus(s1, s3))) {"),
+        ieee("schedule = d0 >= FLOWING_UPDATE_SIMILARITY && similarity(k1, i4) >= FLOWING_UPDATE_SIMILARITY", "schedule = wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, d0) && wg_fp64_less_equal(FLOWING_UPDATE_SIMILARITY, similarity(k1, i4))")
+    );
+
+    private static final String PRELUDE_BODY_IEEE = FusedArith.Ieee.literals("""
+        void setupChunk(uint slot) {
+            gChunk = slot;
+            gBaseX = chunks[slot].chunkX * 16;
+            gBaseZ = chunks[slot].chunkZ * 16;
+            gFirstQX = gBaseX >> 2;
+            gFirstQZ = gBaseZ >> 2;
+        }
+
+        uvec2 rarity3D(uvec2 v) {
+            if (wg_fp64_less(v, -0.5lf)) return 0.75lf;
+            if (wg_fp64_less(v, 0.0lf)) return 1.0lf;
+            return wg_fp64_less(v, 0.5lf) ? 1.5lf : 2.0lf;
+        }
+        uvec2 rarity2D(uvec2 v) {
+            if (wg_fp64_less(v, -0.75lf)) return 0.5lf;
+            if (wg_fp64_less(v, -0.5lf)) return 0.75lf;
+            if (wg_fp64_less(v, 0.5lf)) return 1.0lf;
+            return wg_fp64_less(v, 0.75lf) ? 2.0lf : 3.0lf;
+        }
+
+        // ------------------------------------------------------- Beardifier
+        uvec2 buryContribution(uvec2 x, uvec2 y, uvec2 z) {
+            uvec2 d = jsqrt(wg_fp64_add(wg_fp64_add(wg_fp64_mul(x, x), wg_fp64_mul(y, y)), wg_fp64_mul(z, z)));
+            return clampedMap(d, 0.0lf, 6.0lf, 1.0lf, 0.0lf);
+        }
+        uvec2 fastInvSqrt(uvec2 x) {
+            uvec2 halfX = wg_fp64_mul(0.5lf, x);
+            int64_t i = dbits(x);
+            i = 6910469410427058090l - (i >> 1);
+            uvec2 e = bitsd(i);
+            return wg_fp64_mul(e, wg_fp64_sub(1.5lf, wg_fp64_mul(wg_fp64_mul(halfX, e), e)));
+        }
+        uvec2 beardContribution(int x, int y, int z, int groundDelta) {
+            int i = x + 12, j = y + 12, k = z + 12;
+            if (i < 0 || i >= 24 || j < 0 || j >= 24 || k < 0 || k >= 24) return 0.0lf;
+            uvec2 d0 = wg_fp64_add(wg_fp64_from_int(groundDelta), 0.5lf);
+            uvec2 d1 = wg_fp64_add(wg_fp64_add(wg_fp64_mul(wg_fp64_from_int(x), wg_fp64_from_int(x)), wg_fp64_mul(d0, d0)), wg_fp64_mul(wg_fp64_from_int(z), wg_fp64_from_int(z)));
+            uvec2 d2 = wg_fp64_mul(wg_fp64_mul(wg_fp64_negate(d0), fastInvSqrt(wg_fp64_mul(d1, 0.5lf))), 0.5lf);
+            return wg_fp64_mul(d2, dtab[BEARD_KERNEL + k * 576 + i * 24 + j]);
+        }
+        uvec2 beardifier(ivec3 p) {
+            int base = chunks[gChunk].beardOffset;
+            int pieces = chunks[gChunk].pieceCount;
+            int junctions = chunks[gChunk].junctionCount;
+            uvec2 result = 0.0lf;
+            for (int n = 0; n < pieces; n++) {
+                int o = base + n * 8;
+                int minX = beard[o], minY = beard[o + 1], minZ = beard[o + 2];
+                int maxX = beard[o + 3], maxY = beard[o + 4], maxZ = beard[o + 5];
+                int adjustment = beard[o + 6], groundDelta = beard[o + 7];
+                int i1 = max(0, max(minX - p.x, p.x - maxX));
+                int j1 = max(0, max(minZ - p.z, p.z - maxZ));
+                int k1 = minY + groundDelta;
+                int l1 = p.y - k1;
+                // adjustment: 0 NONE, 1 BURY, 2 BEARD_THIN, 3 BEARD_BOX, 4 ENCAPSULATE
+                int i2 = adjustment == 0 ? 0
+                        : (adjustment == 1 || adjustment == 2) ? l1
+                        : adjustment == 3 ? max(0, max(k1 - p.y, p.y - maxY))
+                        : max(0, max(minY - p.y, p.y - maxY));
+                if (adjustment == 1) result = wg_fp64_add(result, buryContribution(wg_fp64_from_int(i1), wg_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wg_fp64_from_int(j1)));
+                else if (adjustment == 2 || adjustment == 3) result = wg_fp64_add(result, wg_fp64_mul(beardContribution(i1, i2, j1, l1), 0.8lf));
+                else if (adjustment == 4) result = wg_fp64_add(result, wg_fp64_mul(buryContribution(wg_fp64_mul(wg_fp64_from_int(i1), 0.5lf), wg_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wg_fp64_mul(wg_fp64_from_int(j1), 0.5lf)), 0.8lf));
+                else result = wg_fp64_add(result, 0.0lf);
+            }
+            int jb = base + pieces * 8;
+            for (int n = 0; n < junctions; n++) {
+                int o = jb + n * 3;
+                int j2 = p.x - beard[o];
+                int k2 = p.y - beard[o + 1];
+                int l2 = p.z - beard[o + 2];
+                result = wg_fp64_add(result, wg_fp64_mul(beardContribution(j2, k2, l2, k2), 0.4lf));
+            }
+            return result;
+        }
+
+        """);
 
     private static void appendRandom(StringBuilder s, String prefix, PositionalRandomFactorySnapshot random) {
         boolean legacy = random == null || random.algorithm() == PositionalRandomFactorySnapshot.Algorithm.LEGACY;
