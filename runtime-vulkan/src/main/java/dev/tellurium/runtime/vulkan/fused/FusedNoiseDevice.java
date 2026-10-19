@@ -2,6 +2,8 @@
 package dev.tellurium.runtime.vulkan.fused;
 
 import dev.tellurium.compiler.vulkan.fused.FusedNoiseCompiler;
+import dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract;
+import dev.tellurium.semantic.program.NumericProfile;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -51,6 +53,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     private final VkQueue queue;
     private final int queueFamily;
     private final String deviceName;
+    private final NumericProfile numericProfile;
     private final long commandPool;
     private final VkPhysicalDeviceMemoryProperties memoryProperties;
     private volatile boolean lost;
@@ -77,7 +80,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     }
 
     private FusedNoiseDevice(VkInstance instance, VkPhysicalDevice physical, VkDevice device, VkQueue queue,
-                             int queueFamily, String deviceName, long commandPool,
+                             int queueFamily, String deviceName, NumericProfile numericProfile, long commandPool,
                              VkPhysicalDeviceMemoryProperties memoryProperties) {
         this.instance = instance;
         this.physical = physical;
@@ -85,11 +88,13 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         this.queue = queue;
         this.queueFamily = queueFamily;
         this.deviceName = deviceName;
+        this.numericProfile = numericProfile;
         this.commandPool = commandPool;
         this.memoryProperties = memoryProperties;
     }
 
     @Override public String deviceName() { return deviceName; }
+    @Override public NumericProfile numericProfile() { return numericProfile; }
     @Override public boolean profiling() { return PROFILE; }
     @Override public boolean debugBuffers() { return DEBUG_BUFFERS; }
     @Override public String profileSummary() { return summary(); }
@@ -115,6 +120,81 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     @Override public String lostReason() { return lostReason; }
     @Override public void loseDeviceForTest(String reason) { lostReason = reason; lost = true; }
 
+    /** System property choosing the arithmetic: auto (the GPU's own fp64 when it has it), native, or ieee (always emulated). */
+    static final String NUMERIC_PROPERTY = "tellurium.fast.numeric";
+
+    /**
+     * auto: native arithmetic on a GPU with shaderFloat64, emulated in integers otherwise; native: only a GPU with
+     * shaderFloat64; ieee: emulated even where the GPU has fp64 (to compare the two dialects on one device).
+     */
+    enum NumericMode {
+        AUTO, NATIVE, IEEE;
+
+        /** An unset or blank value is auto; anything else that is not one of the three names is an error, not a guess. */
+        static NumericMode parse(String value) {
+            if (value == null || value.isBlank()) return AUTO;
+            return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+                case "auto" -> AUTO;
+                case "native" -> NATIVE;
+                case "ieee" -> IEEE;
+                default -> throw new IllegalStateException(NUMERIC_PROPERTY + " must be auto, native or ieee, not '" + value.trim() + "'");
+            };
+        }
+    }
+
+    /** What device selection needs to know about one physical device. */
+    record Candidate(boolean shaderInt64, boolean shaderFloat64, boolean hasComputeQueue, int score) {}
+
+    /** The chosen device (an index into the candidates) and the arithmetic its kernels use. */
+    record Selection(int index, NumericProfile profile) {}
+
+    /**
+     * Picks the device and the numeric profile.  A candidate needs shaderInt64, a compute queue and a score above
+     * 0 (a real GPU: discrete 3, integrated 2); in native mode also shaderFloat64.  The best score wins, then a
+     * device with shaderFloat64, then the earlier one.  The profile is NATIVE_QUALIFIED when the chosen device has
+     * shaderFloat64 (and the mode is not ieee), GPU_IEEE_BITS otherwise.
+     */
+    static Selection select(List<Candidate> candidates, NumericMode mode) {
+        int best = -1;
+        for (int i = 0; i < candidates.size(); i++) {
+            Candidate candidate = candidates.get(i);
+            if (!candidate.shaderInt64() || !candidate.hasComputeQueue() || candidate.score() <= 0) continue;
+            if (mode == NumericMode.NATIVE && !candidate.shaderFloat64()) continue;
+            if (best < 0) { best = i; continue; }
+            Candidate chosen = candidates.get(best);
+            if (candidate.score() > chosen.score() || candidate.score() == chosen.score() && candidate.shaderFloat64() && !chosen.shaderFloat64()) best = i;
+        }
+        if (best < 0) {
+            throw new IllegalStateException(mode == NumericMode.NATIVE ? "No Vulkan GPU with shaderFloat64 and shaderInt64"
+                    : "No Vulkan GPU with shaderInt64");
+        }
+        boolean native64 = mode != NumericMode.IEEE && candidates.get(best).shaderFloat64();
+        return new Selection(best, native64 ? NumericProfile.NATIVE_QUALIFIED : NumericProfile.GPU_IEEE_BITS);
+    }
+
+    /** A program of the other dialect would run the wrong arithmetic (or fail on a missing feature): refuse it. */
+    static void requireDialect(NumericProfile deviceProfile, FusedNoiseCompiler.Dialect dialect) {
+        if (dialect.profile() != deviceProfile) {
+            throw new IllegalArgumentException("Kernels compiled for the " + dialect + " dialect (" + dialect.profile()
+                    + ") cannot run on a device with the " + deviceProfile + " numeric profile");
+        }
+    }
+
+    /** The emulated dialect has no floating-point type in its kernels; shaderc must not have introduced one. */
+    static void requireNoFloatTypes(byte[] spirv, String kernel) {
+        try {
+            SpirvNumericContract.requireSpirv(spirv, NumericProfile.GPU_IEEE_BITS);
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalStateException("Fused kernel " + kernel + " does not satisfy the integer-only arithmetic contract: "
+                    + failure.getMessage(), failure);
+        }
+    }
+
+    /** Pipeline cache file name; the emulated dialect's caches are kept apart from the native ones. */
+    static String cacheFileName(NumericProfile profile, String fingerprint) {
+        return (profile == NumericProfile.GPU_IEEE_BITS ? "fused-ieee-" : "fused-") + fingerprint.substring(0, 32) + ".vkcache";
+    }
+
     public static FusedNoiseDevice open() {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var app = VkApplicationInfo.calloc(stack).sType$Default()
@@ -131,31 +211,33 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 check(vkEnumeratePhysicalDevices(instance, count, null), "vkEnumeratePhysicalDevices");
                 PointerBuffer devices = stack.mallocPointer(count.get(0));
                 check(vkEnumeratePhysicalDevices(instance, count, devices), "vkEnumeratePhysicalDevices");
-                VkPhysicalDevice best = null;
-                int bestScore = -1, bestFamily = -1;
-                String bestName = "";
+                NumericMode numericMode = NumericMode.parse(System.getProperty(NUMERIC_PROPERTY));
+                VkPhysicalDevice[] physicalDevices = new VkPhysicalDevice[devices.capacity()];
+                String[] names = new String[devices.capacity()];
+                int[] families = new int[devices.capacity()];
+                List<Candidate> candidates = new ArrayList<>();
                 for (int i = 0; i < devices.capacity(); i++) {
                     VkPhysicalDevice candidate = new VkPhysicalDevice(devices.get(i), instance);
                     var props = VkPhysicalDeviceProperties.calloc(stack);
                     vkGetPhysicalDeviceProperties(candidate, props);
                     var features = VkPhysicalDeviceFeatures.calloc(stack);
                     vkGetPhysicalDeviceFeatures(candidate, features);
-                    if (!features.shaderFloat64() || !features.shaderInt64()) continue;
-                    int family = computeFamily(candidate, stack);
-                    if (family < 0) continue;
+                    physicalDevices[i] = candidate;
+                    names[i] = props.deviceNameString();
+                    families[i] = computeFamily(candidate, stack);
                     int score = props.deviceType() == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 3
                             : props.deviceType() == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 2 : 0;
-                    if (score > bestScore) {
-                        best = candidate;
-                        bestScore = score;
-                        bestFamily = family;
-                        bestName = props.deviceNameString();
-                    }
+                    candidates.add(new Candidate(features.shaderInt64(), features.shaderFloat64(), families[i] >= 0, score));
                 }
-                if (best == null || bestScore <= 0) throw new IllegalStateException("No Vulkan GPU with shaderFloat64 and shaderInt64");
+                Selection selection = select(candidates, numericMode);
+                VkPhysicalDevice best = physicalDevices[selection.index()];
+                int bestFamily = families[selection.index()];
+                String bestName = names[selection.index()];
+                NumericProfile profile = selection.profile();
                 var queues = VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(bestFamily).pQueuePriorities(stack.floats(1.0f));
-                var enabled = VkPhysicalDeviceFeatures.calloc(stack).shaderFloat64(true).shaderInt64(true);
+                // shaderFloat64 only for the native dialect: the emulated one has no double in its kernels at all.
+                var enabled = VkPhysicalDeviceFeatures.calloc(stack).shaderFloat64(profile == NumericProfile.NATIVE_QUALIFIED).shaderInt64(true);
                 var deviceInfo = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(enabled)
                         .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(best, stack));
                 check(vkCreateDevice(best, deviceInfo, null, pointer), "vkCreateDevice");
@@ -172,7 +254,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                     pool = handle.get(0);
                     memory = VkPhysicalDeviceMemoryProperties.malloc();
                     vkGetPhysicalDeviceMemoryProperties(best, memory);
-                    return new FusedNoiseDevice(instance, best, device, queue, bestFamily, bestName, pool, memory);
+                    return new FusedNoiseDevice(instance, best, device, queue, bestFamily, bestName, profile, pool, memory);
                 } catch (Throwable failure) {
                     if (memory != null) memory.free();
                     if (pool != VK_NULL_HANDLE) vkDestroyCommandPool(device, pool, null);
@@ -201,6 +283,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     @Override
     public Program load(FusedNoiseCompiler.Compiled compiled, int maxBatchChunks, int slotCount) {
         if (maxBatchChunks <= 0 || slotCount <= 0) throw new IllegalArgumentException("Batch size and slot count must be positive");
+        requireDialect(numericProfile, compiled.dialect());
         synchronized (this) {
             if (closed) throw new IllegalStateException("Fused NOISE device is closed");
             if (lost) throw new IllegalStateException("Fused NOISE device is lost: " + lostReason);
@@ -334,6 +417,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 for (int k = 0; k < KERNELS.length; k++) {
                     long kernelStart = System.nanoTime();
                     byte[] spirv = compileGlsl(compiled.source(), KERNELS[k]);
+                    if (numericProfile == NumericProfile.GPU_IEEE_BITS) requireNoFloatTypes(spirv, KERNELS[k]);
                     long shadercNanos = System.nanoTime() - kernelStart;
                     ByteBuffer code = MemoryUtil.memAlloc(spirv.length);
                     try {
@@ -652,10 +736,10 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
 
     }
 
-    private static java.nio.file.Path cacheFile(String fingerprint) {
+    private java.nio.file.Path cacheFile(String fingerprint) {
         String dir = System.getProperty("tellurium.fast.pipelineCacheDir", "tellurium-cache").trim();
         if (dir.isEmpty() || dir.equals("NONE")) return null;
-        return java.nio.file.Path.of(dir, "fused-" + fingerprint.substring(0, 32) + ".vkcache");
+        return java.nio.file.Path.of(dir, cacheFileName(numericProfile, fingerprint));
     }
 
     private long createPipelineCache(MemoryStack stack, String fingerprint) {

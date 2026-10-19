@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.compiler.vulkan.fused;
 
+import dev.tellurium.semantic.program.NumericProfile;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -15,8 +17,17 @@ public interface FusedGpuBackend extends AutoCloseable {
     boolean lost();
     String lostReason();
 
+    /**
+     * The arithmetic this device runs the kernels with: NATIVE_QUALIFIED (the GPU's own double and float, kernels
+     * from the NATIVE_FP64 dialect) or GPU_IEEE_BITS (exact integer helpers, the IEEE_BITS dialect).  A program
+     * compiled for the other one is rejected by {@link #load}.  The enum is the same class on both sides of the
+     * isolated class loader (it is loaded parent-first).
+     */
+    default NumericProfile numericProfile() { return NumericProfile.NATIVE_QUALIFIED; }
+
     /** Fault injection for tests: from now on behave as if the driver had lost the device. */
     default void loseDeviceForTest(String reason) {}
+    /** @throws IllegalArgumentException when {@code compiled.dialect().profile()} is not this device's {@link #numericProfile()} */
     Program load(FusedNoiseCompiler.Compiled compiled, int maxBatchChunks, int slotCount);
     boolean profiling();
     boolean debugBuffers();
