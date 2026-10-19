@@ -153,7 +153,7 @@ class FusedIeeeHelpersTest {
             exponent++;
         }
         if (exponent >= 255) return (sign << 31) | 0x7f800000;
-        if (exponent == 0) return (sign << 31) | (rounded & 0x7fffff);
+        if (exponent == 0) return (sign << 31) | rounded;
         if (exponent == 1 && less(rounded, 1 << 23)) exponent = 0;
         return (sign << 31) | (exponent << 23) | (rounded & 0x7fffff);
     }
@@ -188,6 +188,7 @@ class FusedIeeeHelpersTest {
         }
         if (exponent >= 2047) return new U2(0, (sign << 31) | 0x7ff00000);
         if (exponent == 1 && (rounded.y & 0x00100000) == 0) exponent = 0;
+        if (exponent == 0 && (rounded.y & 0x00100000) != 0) exponent = 1;
         return new U2(rounded.x, (sign << 31) | (exponent << 20) | (rounded.y & 0xfffff));
     }
 
@@ -284,6 +285,31 @@ class FusedIeeeHelpersTest {
 
     private static U2 fp64Ceil(U2 value) {
         return fp64Negate(fp64Floor(fp64Negate(value)));
+    }
+
+    // ---- the binary32 packer at the edge of the subnormal range ---------------------------------------------
+
+    /**
+     * wg_fp32_pack once dropped the carry of a subnormal that rounds up to the smallest normal number and returned
+     * zero (found on the Apple M3 through wg_fp64_to_fp32).  The packer's value is mantissa * 2^(exponent - 153),
+     * exact in a double for these inputs, so Java's (float) cast of it is the reference.
+     */
+    @Test
+    void theBinary32PackerKeepsTheCarryIntoTheSmallestNormalNumber() {
+        SplittableRandom random = new SplittableRandom(0x5eed0f32L);
+        for (int i = 0; i < 1_000_000; i++) {
+            int exponent = i < 384 ? i / 64 - 3 : random.nextInt(-30, 4);
+            int mantissa = i < 384 ? (1 << 27) - 1 - i % 64 : random.nextInt(1, 1 << 28);
+            float expected = (float) Math.scalb((double) mantissa, exponent - 153);
+            for (int sign = 0; sign <= 1; sign++) {
+                int want = Float.floatToRawIntBits(sign == 0 ? expected : -expected);
+                int got = fp32Pack(sign, exponent, mantissa);
+                if (want != got) {
+                    throw new AssertionError(String.format("fp32_pack(%d, %d, 0x%08x) expected 0x%08x actual 0x%08x",
+                            sign, exponent, mantissa, want, got));
+                }
+            }
+        }
     }
 
     // ---- reference comparison ----------------------------------------------------------------------------

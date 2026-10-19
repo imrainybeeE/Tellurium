@@ -131,7 +131,8 @@ public final class IntegerIeeeEmitter {
                         exponent++;
                     }
                     if (exponent >= 255) return (sign << 31) | 0x7f800000u;
-                    if (exponent == 0) return (sign << 31) | (rounded & 0x7fffffu);
+                    // A subnormal that rounded up to 1 << 23 is the smallest normal number, whose encoding that is.
+                    if (exponent == 0) return (sign << 31) | rounded;
                     if (exponent == 1 && rounded < (1u << 23)) exponent = 0;
                     return (sign << 31) | (uint(exponent) << 23) | (rounded & 0x7fffffu);
                 }
@@ -480,6 +481,8 @@ public final class IntegerIeeeEmitter {
                     }
                     if (exponent >= 2047) return uvec2(0u, (sign << 31) | 0x7ff00000u);
                     if (exponent == 1 && (rounded.y & 0x00100000u) == 0u) exponent = 0;
+                    // A subnormal that rounded up to 1 << 52 is the smallest normal number.
+                    if (exponent == 0 && (rounded.y & 0x00100000u) != 0u) exponent = 1;
                     return uvec2(rounded.x, (sign << 31) | (uint(exponent) << 20) | (rounded.y & 0xfffffu));
                 }
 
