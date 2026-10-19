@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.compiler.vulkan.fused;
 
+import dev.tellurium.semantic.program.NumericProfile;
 import dev.tellurium.semantic.program.ProgramNode;
 import dev.tellurium.semantic.program.ValueType;
 import dev.tellurium.semantic.snapshot.GeneratorSettingsSnapshot;
@@ -46,6 +47,23 @@ public final class FusedNoiseCompiler {
     public static final String VERSION = "worldgennext-fused-noise-v1";
 
     public enum Mode { COLUMN, XZ, CORNER, CELL, VALUE, POINT, POINT_IN, POINT_OUT }
+
+    /**
+     * How the kernels do floating-point arithmetic.  NATIVE_FP64 uses the GPU's double and float, on a device
+     * with shaderFloat64; its text is what the tested-generator lists were made with.  IEEE_BITS does every
+     * double and float operation with exact 32-bit integer helpers (IntegerIeeeEmitter, FusedIeeeHelpers), for a
+     * GPU without fp64 such as Apple's: its kernels contain no floating-point type at all.
+     */
+    public enum Dialect {
+        NATIVE_FP64(NumericProfile.NATIVE_QUALIFIED),
+        IEEE_BITS(NumericProfile.GPU_IEEE_BITS);
+
+        private final NumericProfile profile;
+
+        Dialect(NumericProfile profile) { this.profile = profile; }
+
+        public NumericProfile profile() { return profile; }
+    }
 
     /** Palette indices of the states the material rule can produce, plus fluid predicates. */
     public record MaterialPalette(int air, int defaultBlock, int defaultFluid, int lava,
@@ -134,7 +152,8 @@ public final class FusedNoiseCompiler {
     public record Compiled(String source, double[] doubleTable, int[] permTable, int flatChannels,
                            int interpolatedChannels, Geometry geometry, String fingerprint,
                            List<ProgramNode> flatChildren, List<ProgramNode> interpolatedChildren,
-                           String structureFingerprint, int xzChannels, int surfaceHeader, String surfaceFingerprint) {
+                           String structureFingerprint, int xzChannels, int surfaceHeader, String surfaceFingerprint,
+                           Dialect dialect) {
         /** uints of biome ids uploaded per chunk for the surface stage. */
         public int biomeWordsPerChunk() { return FusedSurfaceKernels.biomeWordsPerChunk(geometry); }
         public int biomeQuartHeight() { return geometry.storageHeight() / 4; }
@@ -150,6 +169,12 @@ public final class FusedNoiseCompiler {
     }
 
     public Compiled compile(Request request) {
+        return compile(request, Dialect.NATIVE_FP64);
+    }
+
+    public Compiled compile(Request request, Dialect dialect) {
+        Objects.requireNonNull(dialect, "dialect");
+        if (dialect != Dialect.NATIVE_FP64) throw new UnsupportedFusedProgramException("The " + dialect + " dialect is not implemented");
         return new Emitter(request).emit();
     }
 
@@ -262,7 +287,7 @@ public final class FusedNoiseCompiler {
             return new Compiled(source, tables.doubleTable(), tables.permTable(), flats.size(), interps.size(),
                     geometry, fingerprint, List.copyOf(flatChildren), List.copyOf(interpChildren),
                     structureFingerprint(source), xzNodes.size(), surfaceHeader,
-                    request.surface() == null ? null : sha256(request.surface().identity()));
+                    request.surface() == null ? null : sha256(request.surface().identity()), Dialect.NATIVE_FP64);
         }
 
         private String header() {
