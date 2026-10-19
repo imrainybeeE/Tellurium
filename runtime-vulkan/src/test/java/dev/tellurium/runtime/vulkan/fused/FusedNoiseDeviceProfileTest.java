@@ -52,17 +52,23 @@ class FusedNoiseDeviceProfileTest {
         assertEquals("No Vulkan GPU with shaderFloat64 and shaderInt64", error.getMessage());
     }
 
-    @Test void rankingFollowsTheDeviceTypeBeforeFp64() {
-        // A discrete GPU without fp64 beats an integrated one with it; the profile then follows the chosen device.
-        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS),
+    @Test void aDeviceWithFp64KeepsTheNativeKernelsWhereverItRanks() {
+        // Before the emulated profile only devices with fp64 were considered: an integrated GPU with fp64 next to a
+        // discrete one without it ran the native kernels, and still does.
+        assertEquals(new Selection(1, NumericProfile.NATIVE_QUALIFIED),
                 FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.AUTO));
+        // Forced to the emulated profile, the device type decides.
+        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS),
+                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.IEEE));
     }
 
-    @Test void aTieGoesToTheDeviceWithFp64ElseTheFirst() {
+    @Test void amongEqualsTheBestTypeWinsThenTheFirst() {
         assertEquals(1, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.AUTO).index());
         assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, true), gpu(DISCRETE, true)), NumericMode.AUTO).index());
+        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, true), gpu(DISCRETE, true)), NumericMode.AUTO).index());
         assertEquals(0, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(INTEGRATED, false)), NumericMode.AUTO).index());
         assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(DISCRETE, false)), NumericMode.AUTO).index());
+        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.IEEE).index());
     }
 
     @Test void everyRequirementFailsClosedWithTheShaderInt64Message() {

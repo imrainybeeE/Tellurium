@@ -75,6 +75,7 @@ public final class FusedNoiseCompiler {
         roots.add("wg_u64_shl");
         roots.add("wg_i64_negate");
         roots.addAll(FusedIeeeHelpers.HELPERS);
+        roots.addAll(FusedIeeeLibrary.HELPER_ROOTS);
         return Set.copyOf(roots);
     }
 

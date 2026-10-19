@@ -150,26 +150,33 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
 
     /**
      * Picks the device and the numeric profile.  A candidate needs shaderInt64, a compute queue and a score above
-     * 0 (a real GPU: discrete 3, integrated 2); in native mode also shaderFloat64.  The best score wins, then a
-     * device with shaderFloat64, then the earlier one.  The profile is NATIVE_QUALIFIED when the chosen device has
-     * shaderFloat64 (and the mode is not ieee), GPU_IEEE_BITS otherwise.
+     * 0 (a real GPU: discrete 3, integrated 2).  Unless the mode is ieee, the devices with shaderFloat64 are
+     * considered first, exactly as before the emulated profile existed, so a machine with such a device runs the
+     * native kernels on the same device as it did; only when none qualifies (and never in native mode) does the
+     * best device with shaderInt64 alone run the emulated ones.  Among equals the best score wins, then the
+     * earlier device.  The profile is NATIVE_QUALIFIED when the chosen device has shaderFloat64 (and the mode is
+     * not ieee), GPU_IEEE_BITS otherwise.
      */
     static Selection select(List<Candidate> candidates, NumericMode mode) {
-        int best = -1;
-        for (int i = 0; i < candidates.size(); i++) {
-            Candidate candidate = candidates.get(i);
-            if (!candidate.shaderInt64() || !candidate.hasComputeQueue() || candidate.score() <= 0) continue;
-            if (mode == NumericMode.NATIVE && !candidate.shaderFloat64()) continue;
-            if (best < 0) { best = i; continue; }
-            Candidate chosen = candidates.get(best);
-            if (candidate.score() > chosen.score() || candidate.score() == chosen.score() && candidate.shaderFloat64() && !chosen.shaderFloat64()) best = i;
-        }
+        int best = mode == NumericMode.IEEE ? -1 : best(candidates, true);
+        if (best < 0 && mode != NumericMode.NATIVE) best = best(candidates, false);
         if (best < 0) {
             throw new IllegalStateException(mode == NumericMode.NATIVE ? "No Vulkan GPU with shaderFloat64 and shaderInt64"
                     : "No Vulkan GPU with shaderInt64");
         }
         boolean native64 = mode != NumericMode.IEEE && candidates.get(best).shaderFloat64();
         return new Selection(best, native64 ? NumericProfile.NATIVE_QUALIFIED : NumericProfile.GPU_IEEE_BITS);
+    }
+
+    private static int best(List<Candidate> candidates, boolean needFloat64) {
+        int best = -1;
+        for (int i = 0; i < candidates.size(); i++) {
+            Candidate candidate = candidates.get(i);
+            if (!candidate.shaderInt64() || !candidate.hasComputeQueue() || candidate.score() <= 0) continue;
+            if (needFloat64 && !candidate.shaderFloat64()) continue;
+            if (best < 0 || candidate.score() > candidates.get(best).score()) best = i;
+        }
+        return best;
     }
 
     /** A program of the other dialect would run the wrong arithmetic (or fail on a missing feature): refuse it. */
