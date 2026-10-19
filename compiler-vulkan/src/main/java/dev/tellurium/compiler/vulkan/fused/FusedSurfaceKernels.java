@@ -23,14 +23,18 @@ final class FusedSurfaceKernels {
     static final int SURF_HEIGHT_CHANGED = 0x100, SURF_STEEP_USED = 0x200;
 
     static String constants(FusedNoiseCompiler.Geometry g) {
+        return constants(FusedArith.of(FusedNoiseCompiler.Dialect.NATIVE_FP64), g);
+    }
+
+    static String constants(FusedArith arith, FusedNoiseCompiler.Geometry g) {
         int quartHeight = g.storageHeight() / 4;
         return "const int BIOME_QH = " + quartHeight + ";\n"
                 + "const int BIOME_WORDS = " + biomeWordsPerChunk(g) + ";\n"
-                + "const double LEGACY_DOUBLE_UNIT = " + FusedNoiseCompiler.dlit((double) 1.110223E-16F) + ";\n"
-                + "#define F_0_05 " + FusedNoiseCompiler.flit(0.05F) + "\n"
-                + "#define F_0_1 " + FusedNoiseCompiler.flit(0.1F) + "\n"
-                + "#define F_0_15 " + FusedNoiseCompiler.flit(0.15F) + "\n"
-                + "#define F_0_2 " + FusedNoiseCompiler.flit(0.2F) + "\n";
+                + "const " + arith.type() + " LEGACY_DOUBLE_UNIT = " + arith.dlit((double) 1.110223E-16F) + ";\n"
+                + "#define F_0_05 " + arith.flit(0.05F) + "\n"
+                + "#define F_0_1 " + arith.flit(0.1F) + "\n"
+                + "#define F_0_15 " + arith.flit(0.15F) + "\n"
+                + "#define F_0_2 " + arith.flit(0.2F) + "\n";
     }
 
     /** Biome ids are 16 bits each over a 6x6 quart-column window, two per uint. */

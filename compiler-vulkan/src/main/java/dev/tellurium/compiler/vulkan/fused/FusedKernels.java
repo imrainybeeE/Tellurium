@@ -17,6 +17,10 @@ final class FusedKernels {
 
     /** Constants, setup and helpers that generated root functions may call. */
     static String prelude(FusedNoiseCompiler.Geometry g, FusedNoiseCompiler.Request request, int beardKernelIndex) {
+        return prelude(FusedArith.of(FusedNoiseCompiler.Dialect.NATIVE_FP64), g, request, beardKernelIndex);
+    }
+
+    static String prelude(FusedArith arith, FusedNoiseCompiler.Geometry g, FusedNoiseCompiler.Request request, int beardKernelIndex) {
         var p = request.palette();
         var settings = request.settings();
         StringBuilder s = new StringBuilder();
@@ -45,8 +49,8 @@ final class FusedKernels {
         s.append("const int BEARD_KERNEL = ").append(beardKernelIndex).append(";\n");
         appendRandom(s, "AQ", request.aquiferRandom());
         appendRandom(s, "ORE", request.oreRandom());
-        s.append("const double FLOWING_UPDATE_SIMILARITY = ")
-                .append(FusedNoiseCompiler.dlit(1.0 - (double) Math.abs(144 - 100) / 25.0)).append(";\n");
+        s.append("const ").append(arith.type()).append(" FLOWING_UPDATE_SIMILARITY = ")
+                .append(arith.dlit(1.0 - (double) Math.abs(144 - 100) / 25.0)).append(";\n");
         s.append(PRELUDE_BODY);
         return s.toString();
     }
