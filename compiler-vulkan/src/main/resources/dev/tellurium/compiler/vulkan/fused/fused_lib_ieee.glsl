@@ -363,7 +363,10 @@ uvec2 endIsland(int E, int bx, int bz) {
     int gridZ = z / 2;
     int remX = jrem(x, 2);
     int remZ = jrem(z, 2);
-    uint height = wg_fp32_sub(F32_HUNDRED, wg_fp32_mul(jsqrtf(wg_fp32_from_int(x * x + z * z)), F32_EIGHT));
+    // Java's int arithmetic wraps here far from the origin (vanilla's rings beyond about 370,000 blocks), but
+    // Metal may assume signed arithmetic does not overflow and drop the negative-argument check below, so the
+    // sum is formed in unsigned arithmetic, which wraps by definition, and reinterpreted.
+    uint height = wg_fp32_sub(F32_HUNDRED, wg_fp32_mul(jsqrtf(wg_fp32_from_int(int(uint(x) * uint(x) + uint(z) * uint(z)))), F32_EIGHT));
     height = jmaxf(F32_NEG_HUNDRED, jminf(F32_EIGHTY, height));
     for (int i = -12; i <= 12; i++) {
         for (int j = -12; j <= 12; j++) {

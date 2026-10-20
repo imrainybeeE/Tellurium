@@ -29,6 +29,10 @@ public final class FusedCompileProbe {
         long shaderc = System.nanoTime() - start;
         System.out.println("shaderc " + kernel + ": " + spirv.length + " bytes in " + shaderc / 1_000_000 + " ms");
         try (FusedNoiseDevice device = FusedNoiseDevice.open(); MemoryStack stack = MemoryStack.stackPush()) {
+            // A device without fp64 runs only the integer dialect: refuse a source with floating-point types, as load() does.
+            if (device.numericProfile() == dev.tellurium.semantic.program.NumericProfile.GPU_IEEE_BITS) {
+                FusedNoiseDevice.requireNoFloatTypes(spirv, kernel);
+            }
             VkDevice vk = device.vkDevice();
             var bindings = VkDescriptorSetLayoutBinding.calloc(FusedNoiseDevice.BINDINGS, stack);
             for (int i = 0; i < FusedNoiseDevice.BINDINGS; i++) bindings.get(i).binding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
