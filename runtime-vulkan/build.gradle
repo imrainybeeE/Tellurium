@@ -18,9 +18,16 @@ dependencies {
     testRuntimeOnly 'org.lwjgl:lwjgl-spvc::natives-linux'
 }
 
-// The tests run on the LWJGL the 26.1.2 build bundles (mod/targets.gradle): the Metal-source conversion has to
-// match that MoltenVK's own SPIRV-Cross, and an older SPIRV-Cross changes what signed modulo means.
-configurations.named('testRuntimeClasspath') {
+// The runtime ships on two LWJGL versions: 3.3.3 in the 1.21.x builds, 3.4.1 (the game's) in the 26.1.2 one
+// (mod/gpu-runtime.gradle).  test runs the unit tests on 3.3.3; testCurrentLwjgl runs them all again on 3.4.1, the
+// only version the Metal-source conversion is for (it has to match that MoltenVK's own SPIRV-Cross; an older
+// SPIRV-Cross changes what signed modulo means, and MetalKernelSource refuses it).
+def currentLwjglTestRuntime = configurations.create('currentLwjglTestRuntimeClasspath') {
+    canBeConsumed = false
+    canBeResolved = true
+    extendsFrom configurations.testImplementation, configurations.testRuntimeOnly
+    def runtime = configurations.testRuntimeClasspath.attributes
+    attributes { target -> runtime.keySet().each { key -> target.attribute(key, runtime.getAttribute(key)) } }
     resolutionStrategy.eachDependency { if (it.requested.group == 'org.lwjgl') it.useVersion '3.4.1' }
 }
 
@@ -28,7 +35,16 @@ configurations.named('testRuntimeClasspath') {
 // larger than its 64 KB default, as the shipped runtime's configured stack allows.
 tasks.named('test') {
     jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    exclude '**/MetalKernelSourceTest*'
 }
+tasks.register('testCurrentLwjgl', Test) {
+    group = 'verification'
+    description = 'The unit tests on LWJGL 3.4.1, which the 26.1.2 build bundles (test runs them on 3.3.3).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.output + sourceSets.main.output + currentLwjglTestRuntime
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+}
+tasks.named('check') { dependsOn 'testCurrentLwjgl' }
 
 tasks.register('nativeDeviceProbe', JavaExec) {
     group = 'verification'

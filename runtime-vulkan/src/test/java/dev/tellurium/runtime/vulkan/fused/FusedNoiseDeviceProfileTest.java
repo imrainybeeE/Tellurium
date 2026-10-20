@@ -34,21 +34,21 @@ class FusedNoiseDeviceProfileTest {
     }
 
     @Test void fp64GpuGetsTheNativeProfileInAutoMode() {
-        assertEquals(new Selection(0, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(List.of(gpu(DISCRETE, true)), NumericMode.AUTO));
+        assertEquals(new Selection(0, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(List.of(gpu(DISCRETE, true)), NumericMode.AUTO, true));
     }
 
     @Test void gpuWithoutFp64GetsTheEmulatedProfileInAutoMode() {
-        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS), FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false)), NumericMode.AUTO));
+        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS), FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false)), NumericMode.AUTO, true));
     }
 
     @Test void ieeeModeForcesTheEmulatedProfileOnAnFp64Gpu() {
-        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS), FusedNoiseDevice.select(List.of(gpu(DISCRETE, true)), NumericMode.IEEE));
+        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS), FusedNoiseDevice.select(List.of(gpu(DISCRETE, true)), NumericMode.IEEE, true));
     }
 
     @Test void nativeModeNeedsFp64EvenWhenAFasterGpuLacksIt() {
         var candidates = List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true));
-        assertEquals(new Selection(1, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, NumericMode.NATIVE));
-        var error = assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(gpu(DISCRETE, false)), NumericMode.NATIVE));
+        assertEquals(new Selection(1, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, NumericMode.NATIVE, true));
+        var error = assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(gpu(DISCRETE, false)), NumericMode.NATIVE, true));
         assertEquals("No Vulkan GPU with shaderFloat64 and shaderInt64", error.getMessage());
     }
 
@@ -56,19 +56,19 @@ class FusedNoiseDeviceProfileTest {
         // Before the emulated profile only devices with fp64 were considered: an integrated GPU with fp64 next to a
         // discrete one without it ran the native kernels, and still does.
         assertEquals(new Selection(1, NumericProfile.NATIVE_QUALIFIED),
-                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.AUTO));
+                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.AUTO, true));
         // Forced to the emulated profile, the device type decides.
         assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS),
-                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.IEEE));
+                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.IEEE, true));
     }
 
     @Test void amongEqualsTheBestTypeWinsThenTheFirst() {
-        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.AUTO).index());
-        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, true), gpu(DISCRETE, true)), NumericMode.AUTO).index());
-        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, true), gpu(DISCRETE, true)), NumericMode.AUTO).index());
-        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(INTEGRATED, false)), NumericMode.AUTO).index());
-        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(DISCRETE, false)), NumericMode.AUTO).index());
-        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.IEEE).index());
+        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.AUTO, true).index());
+        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, true), gpu(DISCRETE, true)), NumericMode.AUTO, true).index());
+        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, true), gpu(DISCRETE, true)), NumericMode.AUTO, true).index());
+        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(INTEGRATED, false)), NumericMode.AUTO, true).index());
+        assertEquals(1, FusedNoiseDevice.select(List.of(gpu(INTEGRATED, false), gpu(DISCRETE, false)), NumericMode.AUTO, true).index());
+        assertEquals(0, FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(DISCRETE, true)), NumericMode.IEEE, true).index());
     }
 
     @Test void everyRequirementFailsClosedWithTheShaderInt64Message() {
@@ -77,14 +77,14 @@ class FusedNoiseDeviceProfileTest {
         var cpuDriver = gpu(CPU, true);
         for (NumericMode mode : new NumericMode[]{NumericMode.AUTO, NumericMode.IEEE}) {
             for (Candidate candidate : List.of(noInt64, noCompute, cpuDriver)) {
-                var error = assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(candidate), mode), mode + " " + candidate);
+                var error = assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(candidate), mode, true), mode + " " + candidate);
                 assertEquals("No Vulkan GPU with shaderInt64", error.getMessage());
             }
             assertEquals("No Vulkan GPU with shaderInt64",
-                    assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(), mode)).getMessage());
+                    assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(), mode, true)).getMessage());
         }
         // A rejected device does not hide a usable one behind it.
-        assertEquals(1, FusedNoiseDevice.select(List.of(noInt64, gpu(INTEGRATED, false)), NumericMode.AUTO).index());
+        assertEquals(1, FusedNoiseDevice.select(List.of(noInt64, gpu(INTEGRATED, false)), NumericMode.AUTO, true).index());
     }
 
     @Test void nativeAndAutoSelectionOnFp64DevicesIsWhatItWasBeforeTheEmulatedDialect() {
@@ -98,10 +98,10 @@ class FusedNoiseDeviceProfileTest {
             int expected = legacyChoice(candidates);
             for (NumericMode mode : new NumericMode[]{NumericMode.NATIVE, NumericMode.AUTO}) {
                 if (expected < 0) {
-                    assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(candidates, mode));
+                    assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(candidates, mode, true));
                 } else {
                     // Every device here has fp64: the choice and the (native) profile are unchanged.
-                    assertEquals(new Selection(expected, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, mode), candidates.toString());
+                    assertEquals(new Selection(expected, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, mode, true), candidates.toString());
                 }
             }
         }
@@ -115,8 +115,8 @@ class FusedNoiseDeviceProfileTest {
                 candidates.add(new Candidate(random.nextInt(8) != 0, random.nextBoolean(), random.nextInt(8) != 0, new int[]{CPU, INTEGRATED, DISCRETE}[random.nextInt(3)]));
             }
             int expected = legacyChoice(candidates);
-            if (expected < 0) assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(candidates, NumericMode.NATIVE));
-            else assertEquals(new Selection(expected, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, NumericMode.NATIVE));
+            if (expected < 0) assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(candidates, NumericMode.NATIVE, true));
+            else assertEquals(new Selection(expected, NumericProfile.NATIVE_QUALIFIED), FusedNoiseDevice.select(candidates, NumericMode.NATIVE, true));
         }
     }
 
@@ -173,15 +173,28 @@ class FusedNoiseDeviceProfileTest {
         assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.requireNoFloatTypes(module((9 << 16) | 21, 1), "K_XZ"));
     }
 
-    @Test void metalIsTheBackendOnAMacWhenTheRuntimeCarriesItUnlessVulkanIsAsked() {
-        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, null));
-        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, ""));
-        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, "metal"));
-        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", true, "vulkan"));
-        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", true, " Vulkan "));
-        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", false, null), "a runtime without the Metal backend uses Vulkan");
-        assertFalse(FusedNoiseDevice.wantsMetal("Windows 11", true, null));
-        assertFalse(FusedNoiseDevice.wantsMetal("Linux", true, null));
-        assertFalse(FusedNoiseDevice.wantsMetal(null, true, null));
+    @Test void offAMacAutoModeRefusesAGpuWithoutFp64AsItAlwaysDid() {
+        var error = assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.select(List.of(gpu(DISCRETE, false)), NumericMode.AUTO, false));
+        assertEquals("No Vulkan GPU with shaderFloat64 and shaderInt64", error.getMessage());
+        assertEquals(new Selection(1, NumericProfile.NATIVE_QUALIFIED),
+                FusedNoiseDevice.select(List.of(gpu(DISCRETE, false), gpu(INTEGRATED, true)), NumericMode.AUTO, false));
+        // Asking for the emulated kernels still works anywhere.
+        assertEquals(new Selection(0, NumericProfile.GPU_IEEE_BITS), FusedNoiseDevice.select(List.of(gpu(DISCRETE, false)), NumericMode.IEEE, false));
+    }
+
+    @Test void metalIsTheBackendOnAnAppleSiliconMacWhenTheRuntimeCarriesItUnlessVulkanOrNativeIsAsked() {
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, null, null));
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", "arm64", true, "", ""));
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, "metal", "auto"));
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, null, "ieee"));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, "vulkan", null));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, " Vulkan ", null));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", true, null, "native"), "the Metal backend has no native fp64");
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", "x86_64", true, null, null), "an Intel Mac was never measured");
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", null, true, null, null));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", "aarch64", false, null, null), "a runtime without the Metal backend uses Vulkan");
+        assertFalse(FusedNoiseDevice.wantsMetal("Windows 11", "aarch64", true, null, null));
+        assertFalse(FusedNoiseDevice.wantsMetal("Linux", "aarch64", true, null, null));
+        assertFalse(FusedNoiseDevice.wantsMetal(null, "aarch64", true, null, null));
     }
 }

@@ -124,12 +124,21 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     static final String BACKEND_PROPERTY = "tellurium.fast.backend";
 
     /**
-     * Whether {@code openIsolated} runs the native Metal backend: on macOS, when the runtime carries it and the
-     * backend property does not ask for Vulkan.
+     * Whether {@code openIsolated} runs the native Metal backend: on an Apple-silicon Mac (where it was measured),
+     * when the runtime carries it, the backend property does not ask for Vulkan and the numeric property does not ask
+     * for native fp64 (the Metal backend runs the emulated kernels only).
      */
-    static boolean wantsMetal(String osName, boolean metalPresent, String backendProperty) {
-        return osName != null && osName.toLowerCase(java.util.Locale.ROOT).startsWith("mac") && metalPresent
-                && !"vulkan".equalsIgnoreCase(backendProperty == null ? "" : backendProperty.trim());
+    static boolean wantsMetal(String osName, String osArch, boolean metalPresent, String backendProperty, String numericProperty) {
+        boolean appleSilicon = macOS(osName) && osArch != null
+                && (osArch.trim().equalsIgnoreCase("aarch64") || osArch.trim().equalsIgnoreCase("arm64"));
+        return appleSilicon && metalPresent
+                && !"vulkan".equalsIgnoreCase(backendProperty == null ? "" : backendProperty.trim())
+                && !"native".equalsIgnoreCase(numericProperty == null ? "" : numericProperty.trim());
+    }
+
+    /** macOS: where the emulated kernels are the automatic choice and Vulkan means MoltenVK. */
+    static boolean macOS(String osName) {
+        return osName != null && osName.toLowerCase(java.util.Locale.ROOT).startsWith("mac");
     }
 
     /**
@@ -144,7 +153,8 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         } catch (ClassNotFoundException absent) {
             metal = null;
         }
-        if (!wantsMetal(System.getProperty("os.name"), metal != null, System.getProperty(BACKEND_PROPERTY))) return null;
+        if (!wantsMetal(System.getProperty("os.name"), System.getProperty("os.arch"), metal != null,
+                System.getProperty(BACKEND_PROPERTY), System.getProperty(NUMERIC_PROPERTY))) return null;
         try {
             return (dev.tellurium.compiler.vulkan.fused.FusedGpuBackend) metal.getMethod("open").invoke(null);
         } catch (java.lang.reflect.InvocationTargetException failure) {
@@ -197,13 +207,17 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
      * best device with shaderInt64 alone run the emulated ones.  Among equals the best score wins, then the
      * earlier device.  The profile is NATIVE_QUALIFIED when the chosen device has shaderFloat64 (and the mode is
      * not ieee), GPU_IEEE_BITS otherwise.
+     *
+     * @param emulatedInAuto whether auto mode may fall back to the emulated kernels: only where they were verified
+     *                       (macOS); elsewhere auto mode refuses a GPU without fp64 as it always did, and only
+     *                       tellurium.fast.numeric=ieee asks for them
      */
-    static Selection select(List<Candidate> candidates, NumericMode mode) {
+    static Selection select(List<Candidate> candidates, NumericMode mode, boolean emulatedInAuto) {
+        boolean emulatedAllowed = mode == NumericMode.IEEE || mode == NumericMode.AUTO && emulatedInAuto;
         int best = mode == NumericMode.IEEE ? -1 : best(candidates, true);
-        if (best < 0 && mode != NumericMode.NATIVE) best = best(candidates, false);
+        if (best < 0 && emulatedAllowed) best = best(candidates, false);
         if (best < 0) {
-            throw new IllegalStateException(mode == NumericMode.NATIVE ? "No Vulkan GPU with shaderFloat64 and shaderInt64"
-                    : "No Vulkan GPU with shaderInt64");
+            throw new IllegalStateException(emulatedAllowed ? "No Vulkan GPU with shaderInt64" : "No Vulkan GPU with shaderFloat64 and shaderInt64");
         }
         boolean native64 = mode != NumericMode.IEEE && candidates.get(best).shaderFloat64();
         return new Selection(best, native64 ? NumericProfile.NATIVE_QUALIFIED : NumericProfile.GPU_IEEE_BITS);
@@ -247,12 +261,15 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var app = VkApplicationInfo.calloc(stack).sType$Default()
                     .pApplicationName(stack.UTF8("Tellurium")).apiVersion(VK12.VK_API_VERSION_1_2);
+            // Portability drivers and MoltenVK's settings on macOS only: elsewhere the instance is created as it always
+            // was, and layered (non-conformant) drivers stay hidden from device selection.
+            boolean mac = macOS(System.getProperty("os.name"));
             var offered = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionNames(stack);
-            var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack, offered);
+            var portabilityInstance = mac ? dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack, offered) : null;
             var instanceInfo = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(app)
                     .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
                     .ppEnabledExtensionNames(portabilityInstance);
-            if (offered.contains(dev.tellurium.runtime.vulkan.VulkanPortability.LAYER_SETTINGS_EXTENSION)) {
+            if (mac && offered.contains(dev.tellurium.runtime.vulkan.VulkanPortability.LAYER_SETTINGS_EXTENSION)) {
                 // MoltenVK: no Metal argument buffers in this instance, the layout MetalKernelSource writes for.
                 var extensions = stack.mallocPointer((portabilityInstance == null ? 0 : portabilityInstance.remaining()) + 1);
                 if (portabilityInstance != null) extensions.put(portabilityInstance);
@@ -286,7 +303,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                             : props.deviceType() == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 2 : 0;
                     candidates.add(new Candidate(features.shaderInt64(), features.shaderFloat64(), families[i] >= 0, score));
                 }
-                Selection selection = select(candidates, numericMode);
+                Selection selection = select(candidates, numericMode, mac);
                 VkPhysicalDevice best = physicalDevices[selection.index()];
                 int bestFamily = families[selection.index()];
                 String bestName = names[selection.index()];
@@ -298,7 +315,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 PointerBuffer deviceExtensions = dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(best, stack);
                 // A portability (MoltenVK) device builds the emulated kernels from Metal source: from SPIR-V, Metal's
                 // compiler inlines every integer helper and takes many minutes per kernel.
-                boolean metalSource = profile == NumericProfile.GPU_IEEE_BITS && deviceExtensions != null
+                boolean metalSource = mac && profile == NumericProfile.GPU_IEEE_BITS && deviceExtensions != null
                         && !"false".equalsIgnoreCase(System.getProperty("tellurium.fast.metalSource", "").trim());
                 if (metalSource && MetalKernelSource.unsupportedReason() != null) throw new IllegalStateException(MetalKernelSource.unsupportedReason());
                 var deviceInfo = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(enabled)
