@@ -55,7 +55,7 @@ public final class MetalKernelSource {
      */
     static final String DEFAULT_CALLS = "wg_fp64_div,wg_fp64_sqrt,wg_fp64_add,wg_fp64_sub,wg_fp64_mul,wg_fp64_lerp,wg_fp64_floor,"
             + "wg_fp64_pack,wg_fp64_to_fp32,wg_fp64_from_int,wg_fp64_from_fp32,wg_fp32_add,wg_fp32_sub,wg_fp32_mul,wg_fp32_div,"
-            + "wg_fp32_sqrt,wg_fp32_pack,wg_fp32_from_int,wgf_";
+            + "wg_fp32_sqrt,wg_fp32_pack,wg_fp32_from_int,wgf_,wgx_";
     private static final Pattern INLINED_HELPER = Pattern.compile("static inline __attribute__\\(\\(always_inline\\)\\)\\n(\\S+ ("
             + String.join("|", java.util.Arrays.stream(System.getProperty("tellurium.fast.metalCalls", DEFAULT_CALLS).split(","))
                     .map(String::trim).filter(p -> !p.isEmpty()).map(Pattern::quote).toList()) + ")[A-Za-z0-9_]*\\()");

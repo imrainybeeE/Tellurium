@@ -48,9 +48,9 @@ class FusedArithTest {
         assertEquals("uvec2", ieee.type());
         assertEquals("uvec2", ieee.preciseType());
         assertEquals("uint", ieee.floatType());
-        assertEquals("wg_fp64_add(a, b)", ieee.add("a", "b"));
-        assertEquals("wg_fp64_sub(a, b)", ieee.sub("a", "b"));
-        assertEquals("wg_fp64_mul(a, b)", ieee.mul("a", "b"));
+        assertEquals("wgx_fp64_add(a, b)", ieee.add("a", "b"));
+        assertEquals("wgx_fp64_sub(a, b)", ieee.sub("a", "b"));
+        assertEquals("wgx_fp64_mul(a, b)", ieee.mul("a", "b"));
         assertEquals("wg_fp64_negate(a)", ieee.neg("a"));
         assertEquals("wg_fp64_abs(a)", ieee.abs("a"));
         assertEquals("wg_fp64_floor(a)", ieee.floor("a"));
@@ -74,9 +74,9 @@ class FusedArithTest {
     @Test
     void ieeeNestingFollowsTheNativeParse() {
         // -d0 * f * 0.5lf
-        assertEquals("wg_fp64_mul(wg_fp64_mul(wg_fp64_negate(d0), f), x)", ieee.mul(ieee.mul(ieee.neg("d0"), "f"), "x"));
+        assertEquals("wgx_fp64_mul(wgx_fp64_mul(wg_fp64_negate(d0), f), x)", ieee.mul(ieee.mul(ieee.neg("d0"), "f"), "x"));
         // v * v * v
-        assertEquals("wg_fp64_mul(wg_fp64_mul(v, v), v)", ieee.mul(ieee.mul("v", "v"), "v"));
+        assertEquals("wgx_fp64_mul(wgx_fp64_mul(v, v), v)", ieee.mul(ieee.mul("v", "v"), "v"));
     }
 
     @Test

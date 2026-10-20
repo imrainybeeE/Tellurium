@@ -243,7 +243,7 @@ final class FusedKernels {
 
     /** Floating-point text of every kernel variant; applied in this order after the native variant rewrites. */
     static final List<FusedArith.Swap> KERNEL_COMMON = List.of(
-        ieee("precise double d0 = root_spread_point(ivec3(k, l, i1)) * 10.0lf;", "uvec2 d0 = wg_fp64_mul(root_spread_point(ivec3(k, l, i1)), 10.0lf);"),
+        ieee("precise double d0 = root_spread_point(ivec3(k, l, i1)) * 10.0lf;", "uvec2 d0 = wgx_fp64_mul(root_spread_point(ivec3(k, l, i1)), 10.0lf);"),
         ieee("int l1 = mfloor(jdiv(d0, 3.0lf)) * 3;", "int l1 = mfloor(jdiv(d0, 3.0lf)) * 3;"),
         ieee("""
             int computeSurfaceLevel(int x, int y, int z, ivec2 global, int prelimMin, bool neighborSurface) {
@@ -280,8 +280,8 @@ final class FusedKernels {
                     uvec2 d3 = mclamp(root_flood_point(q), -1.0lf, 1.0lf);
                     uvec2 d4 = mapd(d2, 1.0lf, 0.0lf, -0.3lf, 0.8lf);
                     uvec2 d5 = mapd(d2, 1.0lf, 0.0lf, -0.8lf, 0.4lf);
-                    d0 = wg_fp64_sub(d3, d5);
-                    d1 = wg_fp64_sub(d3, d4);
+                    d0 = wgx_fp64_sub(d3, d5);
+                    d1 = wgx_fp64_sub(d3, d4);
                 }
                 if (wg_fp64_less(0.0lf, d1)) return global.x;
                 if (wg_fp64_less(0.0lf, d0)) return randomizedSurfaceLevel(x, y, z, prelimMin);
@@ -289,7 +289,7 @@ final class FusedKernels {
             }"""),
         ieee("precise double d0 = root_lava_point(ivec3(jfloorDiv(x, 64), jfloorDiv(y, 40), jfloorDiv(z, 64)));", "uvec2 d0 = root_lava_point(ivec3(jfloorDiv(x, 64), jfloorDiv(y, 40), jfloorDiv(z, 64)));"),
         ieee("if (abs(d0) > 0.3lf) type = 2;", "if (wg_fp64_less(0.3lf, wg_fp64_abs(d0))) type = 2;"),
-        ieee("precise double similarity(int a, int b) { return 1.0lf - jdiv(double(abs(b - a)), 25.0lf); }", "uvec2 similarity(int a, int b) { return wg_fp64_sub(1.0lf, jdiv(wg_fp64_from_int(abs(b - a)), 25.0lf)); }"),
+        ieee("precise double similarity(int a, int b) { return 1.0lf - jdiv(double(abs(b - a)), 25.0lf); }", "uvec2 similarity(int a, int b) { return wgx_fp64_sub(1.0lf, jdiv(wg_fp64_from_int(abs(b - a)), 25.0lf)); }"),
         ieee("""
             precise double calculatePressure(ivec3 p, inout double barrier, ivec2 s1, ivec2 s2) {
                 int i = p.y;
@@ -329,16 +329,16 @@ final class FusedKernels {
                 if ((!isLavaBlock(bs) || !isWaterBlock(bs1)) && (!isWaterBlock(bs) || !isLavaBlock(bs1))) {
                     int j = abs(s1.x - s2.x);
                     if (j == 0) return 0.0lf;
-                    uvec2 d0 = wg_fp64_mul(0.5lf, wg_fp64_from_int(s1.x + s2.x));
-                    uvec2 d1 = wg_fp64_sub(wg_fp64_add(wg_fp64_from_int(i), 0.5lf), d0);
-                    uvec2 d2 = wg_fp64_mul(wg_fp64_from_int(j), 0.5lf);
-                    uvec2 d9 = wg_fp64_sub(d2, wg_fp64_abs(d1));
+                    uvec2 d0 = wgx_fp64_mul(0.5lf, wg_fp64_from_int(s1.x + s2.x));
+                    uvec2 d1 = wgx_fp64_sub(wgx_fp64_add(wg_fp64_from_int(i), 0.5lf), d0);
+                    uvec2 d2 = wgx_fp64_mul(wg_fp64_from_int(j), 0.5lf);
+                    uvec2 d9 = wgx_fp64_sub(d2, wg_fp64_abs(d1));
                     uvec2 d10;
                     if (wg_fp64_less(0.0lf, d1)) {
-                        uvec2 d11 = wg_fp64_add(0.0lf, d9);
+                        uvec2 d11 = wgx_fp64_add(0.0lf, d9);
                         d10 = wg_fp64_less(0.0lf, d11) ? jdiv(d11, 1.5lf) : jdiv(d11, 2.5lf);
                     } else {
-                        uvec2 d15 = wg_fp64_add(3.0lf, d9);
+                        uvec2 d15 = wgx_fp64_add(3.0lf, d9);
                         d10 = wg_fp64_less(0.0lf, d15) ? jdiv(d15, 3.0lf) : jdiv(d15, 10.0lf);
                     }
                     uvec2 d12;
@@ -348,7 +348,7 @@ final class FusedKernels {
                     } else {
                         d12 = 0.0lf;
                     }
-                    return wg_fp64_mul(2.0lf, wg_fp64_add(d12, d10));
+                    return wgx_fp64_mul(2.0lf, wgx_fp64_add(d12, d10));
                 }
                 return 2.0lf;
             }"""),
@@ -357,16 +357,16 @@ final class FusedKernels {
         ieee("precise double d1 = similarity(k1, l1);", "uvec2 d1 = similarity(k1, l1);"),
         ieee("if (d1 <= 0.0lf) {", "if (wg_fp64_less_equal(d1, 0.0lf)) {"),
         ieee("double barrier = bitsd(int64_t(0x7ff8000000000000ul));", "uvec2 barrier = uvec2(0u, 0x7ff80000u);"),
-        ieee("precise double d2 = d1 * calculatePressure(p, barrier, s1, s2);", "uvec2 d2 = wg_fp64_mul(d1, calculatePressure(p, barrier, s1, s2));"),
-        ieee("if (density + d2 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d2))) return -1;"),
+        ieee("precise double d2 = d1 * calculatePressure(p, barrier, s1, s2);", "uvec2 d2 = wgx_fp64_mul(d1, calculatePressure(p, barrier, s1, s2));"),
+        ieee("if (density + d2 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wgx_fp64_add(density, d2))) return -1;"),
         ieee("precise double d0 = similarity(k1, i2);", "uvec2 d0 = similarity(k1, i2);"),
         ieee("if (d0 > 0.0lf) {", "if (wg_fp64_less(0.0lf, d0)) {"),
-        ieee("precise double d3 = d1 * d0 * calculatePressure(p, barrier, s1, s3);", "uvec2 d3 = wg_fp64_mul(wg_fp64_mul(d1, d0), calculatePressure(p, barrier, s1, s3));"),
-        ieee("if (density + d3 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d3))) return -1;"),
+        ieee("precise double d3 = d1 * d0 * calculatePressure(p, barrier, s1, s3);", "uvec2 d3 = wgx_fp64_mul(wgx_fp64_mul(d1, d0), calculatePressure(p, barrier, s1, s3));"),
+        ieee("if (density + d3 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wgx_fp64_add(density, d3))) return -1;"),
         ieee("precise double d4 = similarity(l1, i2);", "uvec2 d4 = similarity(l1, i2);"),
         ieee("if (d4 > 0.0lf) {", "if (wg_fp64_less(0.0lf, d4)) {"),
-        ieee("precise double d5 = d1 * d4 * calculatePressure(p, barrier, s2, s3);", "uvec2 d5 = wg_fp64_mul(wg_fp64_mul(d1, d4), calculatePressure(p, barrier, s2, s3));"),
-        ieee("if (density + d5 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wg_fp64_add(density, d5))) return -1;"),
+        ieee("precise double d5 = d1 * d4 * calculatePressure(p, barrier, s2, s3);", "uvec2 d5 = wgx_fp64_mul(wgx_fp64_mul(d1, d4), calculatePressure(p, barrier, s2, s3));"),
+        ieee("if (density + d5 > 0.0lf) return -1;", "if (wg_fp64_less(0.0lf, wgx_fp64_add(density, d5))) return -1;"),
         ieee("""
             int oreVein(ivec3 p) {
                 precise double d0 = root_toggle_value(p);
@@ -404,7 +404,7 @@ final class FusedKernels {
                 if (k < 0 || j < 0) return -1;
                 int l = min(j, k);
                 uvec2 d2 = clampedMap(wg_fp64_from_int(l), 0.0lf, 20.0lf, -0.2lf, 0.0lf);
-                if (wg_fp64_less(wg_fp64_add(d1, d2), 0.4000000059604645lf)) return -1;
+                if (wg_fp64_less(wgx_fp64_add(d1, d2), 0.4000000059604645lf)) return -1;
                 Rng r = rngAt(ORE_LEGACY, ORE_SEED, ORE_LO, ORE_HI, p.x, i, p.z);
                 if (wg_fp32_less(0.7f, rngNextFloat(r))) return -1;
                 if (wg_fp64_less_equal(0.0lf, root_ridged_value(p))) return -1;
@@ -415,7 +415,7 @@ final class FusedKernels {
                 }
                 return copper ? P_GRANITE : P_TUFF;
             }"""),
-        ieee("precise double density = root_final_cell(p) + beardifier(p);", "uvec2 density = wg_fp64_add(root_final_cell(p), beardifier(p));")
+        ieee("precise double density = root_final_cell(p) + beardifier(p);", "uvec2 density = wgx_fp64_add(root_final_cell(p), beardifier(p));")
     );
 
     /** The schedule line of the rule before Minecraft 1.21.2. */
@@ -454,23 +454,23 @@ final class FusedKernels {
 
         // ------------------------------------------------------- Beardifier
         uvec2 buryContribution(uvec2 x, uvec2 y, uvec2 z) {
-            uvec2 d = jsqrt(wg_fp64_add(wg_fp64_add(wg_fp64_mul(x, x), wg_fp64_mul(y, y)), wg_fp64_mul(z, z)));
+            uvec2 d = jsqrt(wgx_fp64_add(wgx_fp64_add(wgx_fp64_mul(x, x), wgx_fp64_mul(y, y)), wgx_fp64_mul(z, z)));
             return clampedMap(d, 0.0lf, 6.0lf, 1.0lf, 0.0lf);
         }
         uvec2 fastInvSqrt(uvec2 x) {
-            uvec2 halfX = wg_fp64_mul(0.5lf, x);
+            uvec2 halfX = wgx_fp64_mul(0.5lf, x);
             int64_t i = dbits(x);
             i = 6910469410427058090l - (i >> 1);
             uvec2 e = bitsd(i);
-            return wg_fp64_mul(e, wg_fp64_sub(1.5lf, wg_fp64_mul(wg_fp64_mul(halfX, e), e)));
+            return wgx_fp64_mul(e, wgx_fp64_sub(1.5lf, wgx_fp64_mul(wgx_fp64_mul(halfX, e), e)));
         }
         uvec2 beardContribution(int x, int y, int z, int groundDelta) {
             int i = x + 12, j = y + 12, k = z + 12;
             if (i < 0 || i >= 24 || j < 0 || j >= 24 || k < 0 || k >= 24) return 0.0lf;
-            uvec2 d0 = wg_fp64_add(wg_fp64_from_int(groundDelta), 0.5lf);
-            uvec2 d1 = wg_fp64_add(wg_fp64_add(wg_fp64_mul(wg_fp64_from_int(x), wg_fp64_from_int(x)), wg_fp64_mul(d0, d0)), wg_fp64_mul(wg_fp64_from_int(z), wg_fp64_from_int(z)));
-            uvec2 d2 = wg_fp64_mul(wg_fp64_mul(wg_fp64_negate(d0), fastInvSqrt(wg_fp64_mul(d1, 0.5lf))), 0.5lf);
-            return wg_fp64_mul(d2, dtab[BEARD_KERNEL + k * 576 + i * 24 + j]);
+            uvec2 d0 = wgx_fp64_add(wg_fp64_from_int(groundDelta), 0.5lf);
+            uvec2 d1 = wgx_fp64_add(wgx_fp64_add(wgx_fp64_mul(wg_fp64_from_int(x), wg_fp64_from_int(x)), wgx_fp64_mul(d0, d0)), wgx_fp64_mul(wg_fp64_from_int(z), wg_fp64_from_int(z)));
+            uvec2 d2 = wgx_fp64_mul(wgx_fp64_mul(wg_fp64_negate(d0), fastInvSqrt(wgx_fp64_mul(d1, 0.5lf))), 0.5lf);
+            return wgx_fp64_mul(d2, dtab[BEARD_KERNEL + k * 576 + i * 24 + j]);
         }
         uvec2 beardifier(ivec3 p) {
             int base = chunks[gChunk].beardOffset;
@@ -491,10 +491,10 @@ final class FusedKernels {
                         : (adjustment == 1 || adjustment == 2) ? l1
                         : adjustment == 3 ? max(0, max(k1 - p.y, p.y - maxY))
                         : max(0, max(minY - p.y, p.y - maxY));
-                if (adjustment == 1) result = wg_fp64_add(result, buryContribution(wg_fp64_from_int(i1), wg_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wg_fp64_from_int(j1)));
-                else if (adjustment == 2 || adjustment == 3) result = wg_fp64_add(result, wg_fp64_mul(beardContribution(i1, i2, j1, l1), 0.8lf));
-                else if (adjustment == 4) result = wg_fp64_add(result, wg_fp64_mul(buryContribution(wg_fp64_mul(wg_fp64_from_int(i1), 0.5lf), wg_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wg_fp64_mul(wg_fp64_from_int(j1), 0.5lf)), 0.8lf));
-                else result = wg_fp64_add(result, 0.0lf);
+                if (adjustment == 1) result = wgx_fp64_add(result, buryContribution(wg_fp64_from_int(i1), wgx_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wg_fp64_from_int(j1)));
+                else if (adjustment == 2 || adjustment == 3) result = wgx_fp64_add(result, wgx_fp64_mul(beardContribution(i1, i2, j1, l1), 0.8lf));
+                else if (adjustment == 4) result = wgx_fp64_add(result, wgx_fp64_mul(buryContribution(wgx_fp64_mul(wg_fp64_from_int(i1), 0.5lf), wgx_fp64_mul(wg_fp64_from_int(i2), 0.5lf), wgx_fp64_mul(wg_fp64_from_int(j1), 0.5lf)), 0.8lf));
+                else result = wgx_fp64_add(result, 0.0lf);
             }
             int jb = base + pieces * 8;
             for (int n = 0; n < junctions; n++) {
@@ -502,7 +502,7 @@ final class FusedKernels {
                 int j2 = p.x - beard[o];
                 int k2 = p.y - beard[o + 1];
                 int l2 = p.z - beard[o + 2];
-                result = wg_fp64_add(result, wg_fp64_mul(beardContribution(j2, k2, l2, k2), 0.4lf));
+                result = wgx_fp64_add(result, wgx_fp64_mul(beardContribution(j2, k2, l2, k2), 0.4lf));
             }
             return result;
         }

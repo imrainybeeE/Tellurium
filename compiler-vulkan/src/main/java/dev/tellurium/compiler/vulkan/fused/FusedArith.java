@@ -132,9 +132,9 @@ interface FusedArith {
             return doubleBits(Double.parseDouble(nativeText.substring(0, nativeText.length() - 2)));
         }
 
-        @Override public String add(String a, String b) { return call("wg_fp64_add", a, b); }
-        @Override public String sub(String a, String b) { return call("wg_fp64_sub", a, b); }
-        @Override public String mul(String a, String b) { return call("wg_fp64_mul", a, b); }
+        @Override public String add(String a, String b) { return call("wgx_fp64_add", a, b); }
+        @Override public String sub(String a, String b) { return call("wgx_fp64_sub", a, b); }
+        @Override public String mul(String a, String b) { return call("wgx_fp64_mul", a, b); }
         @Override public String neg(String a) { return call("wg_fp64_negate", a); }
         @Override public String abs(String a) { return call("wg_fp64_abs", a); }
         @Override public String floor(String a) { return call("wg_fp64_floor", a); }

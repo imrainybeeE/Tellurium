@@ -167,7 +167,7 @@ public final class NativeIntegerIeeeRunner {
         int unaryVectorCount = release ? 1_000_000 : 100_000;
         int rngVectorCount = release ? 1_000_000 : 100_000;
         try (Session session = new Session()) {
-            session.enableInt64 = fastIeee;
+            session.enableInt64 = fastIeee || fusedLib;
             session.selectAndOpen();
             if (fastIeee) {
                 FastIeee.run(session, outputPath(args));

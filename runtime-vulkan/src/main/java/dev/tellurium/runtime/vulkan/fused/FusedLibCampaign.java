@@ -74,6 +74,7 @@ public final class FusedLibCampaign {
                 """);
         source.append(IntegerIeeeEmitter.helperSource(FusedIeeeLibrary.HELPER_ROOTS));
         source.append(FusedIeeeHelpers.source());
+        source.append(dev.tellurium.compiler.vulkan.fused.FastIeeeHelpers.source());
         source.append(FusedIeeeLibrary.source());
         source.append("""
 

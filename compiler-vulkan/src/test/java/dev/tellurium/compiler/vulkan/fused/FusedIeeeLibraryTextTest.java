@@ -77,6 +77,7 @@ class FusedIeeeLibraryTextTest {
         FusedLibraryText.functions(IEEE).forEach(function -> known.add(function.name()));
         FusedLibraryText.functions(IntegerIeeeEmitter.helperSource(FusedIeeeLibrary.HELPER_ROOTS)).forEach(function -> known.add(function.name()));
         FusedLibraryText.functions(FusedIeeeHelpers.source()).forEach(function -> known.add(function.name()));
+        FusedLibraryText.functions(FastIeeeHelpers.source()).forEach(function -> known.add(function.name()));
         var unknown = new TreeSet<String>();
         Matcher call = CALL.matcher(FusedLibraryText.withoutComments(IEEE));
         while (call.find()) {
@@ -90,11 +91,12 @@ class FusedIeeeLibraryTextTest {
     }
 
     @Test
-    void helperRootsAreExactlyWhatTheLibraryCallsPlusTheFusedHelpersCalls() {
+    void helperRootsAreExactlyWhatTheLibraryCallsPlusTheFusedAndFastHelpersCalls() {
         var called = new TreeSet<String>();
         Matcher call = Pattern.compile("\\bwg_[A-Za-z0-9_]+(?=\\s*\\()").matcher(FusedLibraryText.withoutComments(IEEE));
         while (call.find()) called.add(call.group());
         called.addAll(FusedIeeeHelpers.HELPERS);
+        called.addAll(FastIeeeHelpers.HELPERS);
         assertEquals(called, new TreeSet<>(FusedIeeeLibrary.HELPER_ROOTS));
         // the closure resolves, and fails closed on an unknown root
         String closure = IntegerIeeeEmitter.helperSource(FusedIeeeLibrary.HELPER_ROOTS);

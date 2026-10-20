@@ -71,10 +71,12 @@ class FusedIeeeAssemblyTest {
         String source = compileIeee(fixture).source();
         String library = FusedNoiseCompiler.ieeeLibrary();
         assertTrue(source.startsWith("#version 460\n#extension GL_ARB_gpu_shader_int64 : require\n// tellurium-fused-ieee-bits-v1\n"), name);
-        assertTrue(source.contains(FusedIeeeHelpers.source() + library + "\n"), name + ": the conversions and the library follow the helpers");
+        assertTrue(source.contains(FusedIeeeHelpers.source() + FastIeeeHelpers.source() + library + "\n"), name + ": the conversions, the fast helpers and the library follow the helpers");
         int libraryAt = source.indexOf(library);
         assertEquals(libraryAt, source.lastIndexOf(library), name + ": the library is in the text once");
         assertTrue(source.indexOf("uvec2 wg_fp64_add(") < source.indexOf(FusedIeeeHelpers.source()), name);
+        assertTrue(source.indexOf("uvec2 wg_fp64_mul(") < source.indexOf(FastIeeeHelpers.source()), name + ": the fallbacks come before the fast helpers");
+        assertTrue(source.indexOf(FusedIeeeHelpers.source()) < source.indexOf(FastIeeeHelpers.source()), name);
         assertTrue(libraryAt < source.indexOf("uvec2 xzv(int c, ivec3 p)"), name);
         assertTrue(source.indexOf("uvec2 xzv(int c, ivec3 p)") < source.indexOf("void setupChunk(uint slot)"), name);
         assertTrue(source.indexOf("void setupChunk(uint slot)") < source.indexOf("void main()"), name);

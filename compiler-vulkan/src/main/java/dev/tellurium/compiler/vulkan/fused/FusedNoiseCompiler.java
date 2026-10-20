@@ -55,19 +55,19 @@ public final class FusedNoiseCompiler {
 
     /**
      * The integer helpers the IEEE kernels, the generated functions and the library call directly; the closure
-     * they need is added by {@code IntegerIeeeEmitter.helperSource}, and {@link FusedIeeeHelpers#HELPERS} is
-     * added to it.  {@code wg_fp64_floor_to_i32} is left out on purpose: it fails instead of saturating, and
+     * they need is added by {@code IntegerIeeeEmitter.helperSource}, and {@link FusedIeeeHelpers#HELPERS} and
+     * {@link FastIeeeHelpers#HELPERS} (the fallbacks of the fast add, sub and mul the kernels call) are added to it.  {@code wg_fp64_floor_to_i32} is left out on purpose: it fails instead of saturating, and
      * the Java conversion is {@code wgf_fp64_to_i32_java}.
      */
     private static final Set<String> IEEE_ROOTS = ieeeRoots();
 
     private static Set<String> ieeeRoots() {
         var roots = new LinkedHashSet<String>();
-        for (String name : List.of("add", "sub", "mul", "div", "sqrt", "floor", "negate", "abs", "equal", "less", "less_equal",
+        for (String name : List.of("div", "sqrt", "floor", "negate", "abs", "equal", "less", "less_equal",
                 "nan", "inf", "zero", "sign", "exp", "lerp", "from_int", "from_fp32", "to_fp32", "qnan", "pack")) {
             roots.add("wg_fp64_" + name);
         }
-        for (String name : List.of("add", "sub", "mul", "nan", "inf", "zero", "equal", "less", "less_equal", "negate", "abs",
+        for (String name : List.of("nan", "inf", "zero", "equal", "less", "less_equal", "negate", "abs",
                 "from_int", "pack")) {
             roots.add("wg_fp32_" + name);
         }
@@ -75,6 +75,7 @@ public final class FusedNoiseCompiler {
         roots.add("wg_u64_shl");
         roots.add("wg_i64_negate");
         roots.addAll(FusedIeeeHelpers.HELPERS);
+        roots.addAll(FastIeeeHelpers.HELPERS);
         roots.addAll(FusedIeeeLibrary.HELPER_ROOTS);
         return Set.copyOf(roots);
     }
@@ -331,7 +332,7 @@ public final class FusedNoiseCompiler {
             int surfaceHeader = request.surface() == null ? 0 : tables.surface(request.surface());
             boolean ieee = arith.dialect() == Dialect.IEEE_BITS;
             // The IEEE text is the native text's parts in the same order, preceded by the helpers they call.
-            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + ieeeLibraryText : library()) + "\n"
+            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + FastIeeeHelpers.source() + ieeeLibraryText : library()) + "\n"
                     + accessors() + FusedKernels.prelude(arith, geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(arith, geometry) + functions
                     + FusedKernels.kernels(arith, flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface())
                     + FusedSurfaceKernels.body(arith);

@@ -146,21 +146,21 @@ uint jremf(uint a, uint b) {
     uvec2 da = wg_fp64_abs(wg_fp64_from_fp32(a));
     uvec2 db = wg_fp64_from_fp32(b);
     uvec2 q = wg_fp64_floor(wg_fp64_div(da, db));
-    uvec2 r = wg_fp64_sub(da, wg_fp64_mul(q, db));
-    if (wg_fp64_less(r, D64_ZERO)) r = wg_fp64_add(r, db);
-    if (wg_fp64_less_equal(db, r)) r = wg_fp64_sub(r, db);
+    uvec2 r = wgx_fp64_sub(da, wgx_fp64_mul(q, db));
+    if (wg_fp64_less(r, D64_ZERO)) r = wgx_fp64_add(r, db);
+    if (wg_fp64_less_equal(db, r)) r = wgx_fp64_sub(r, db);
     uint res = wg_fp64_to_fp32(r);
     return wg_fp32_less(a, F32_ZERO) ? wg_fp32_negate(res) : res;
 }
 
 uvec2 lerpd(uvec2 t, uvec2 a, uvec2 b) { return wg_fp64_lerp(a, b, t); }
-uint lerpf(uint t, uint a, uint b) { return wg_fp32_add(a, wg_fp32_mul(t, wg_fp32_sub(b, a))); }
+uint lerpf(uint t, uint a, uint b) { return wgx_fp32_add(a, wgx_fp32_mul(t, wgx_fp32_sub(b, a))); }
 uvec2 clampedLerp(uvec2 a, uvec2 b, uvec2 t) {
     if (wg_fp64_less(t, D64_ZERO)) return a;
     if (wg_fp64_less(D64_ONE, t)) return b;
     return lerpd(t, a, b);
 }
-uvec2 inverseLerp(uvec2 v, uvec2 a, uvec2 b) { return jdiv(wg_fp64_sub(v, a), wg_fp64_sub(b, a)); }
+uvec2 inverseLerp(uvec2 v, uvec2 a, uvec2 b) { return jdiv(wgx_fp64_sub(v, a), wgx_fp64_sub(b, a)); }
 uvec2 clampedMap(uvec2 v, uvec2 a, uvec2 b, uvec2 c, uvec2 d) { return clampedLerp(c, d, inverseLerp(v, a, b)); }
 uvec2 mapd(uvec2 v, uvec2 a, uvec2 b, uvec2 c, uvec2 d) { return lerpd(inverseLerp(v, a, b), c, d); }
 uvec2 mclamp(uvec2 v, uvec2 lo, uvec2 hi) { return wg_fp64_less(v, lo) ? lo : jmin(v, hi); }
@@ -171,60 +171,60 @@ uvec2 mclamp(uvec2 v, uvec2 lo, uvec2 hi) { return wg_fp64_less(v, lo) ? lo : jm
 const int PERLIN_STRIDE = 7;
 
 uvec2 smoothstepd(uvec2 v) {
-    return wg_fp64_mul(wg_fp64_mul(wg_fp64_mul(v, v), v),
-            wg_fp64_add(wg_fp64_mul(v, wg_fp64_sub(wg_fp64_mul(v, D64_SIX), D64_FIFTEEN)), D64_TEN));
+    return wgx_fp64_mul(wgx_fp64_mul(wgx_fp64_mul(v, v), v),
+            wgx_fp64_add(wgx_fp64_mul(v, wgx_fp64_sub(wgx_fp64_mul(v, D64_SIX), D64_FIFTEEN)), D64_TEN));
 }
 // v / 2^25 as v * 2^-25: both round the same exact value once, so they agree for every input (subnormal,
 // infinite and NaN results included), and the product costs a small fraction of the quotient.
 uvec2 wrapd(uvec2 v) {
-    return wg_fp64_sub(v, wg_fp64_mul(wg_fp64_floor(wg_fp64_add(wg_fp64_mul(v, D64_INV_WRAP), D64_HALF)), D64_WRAP));
+    return wgx_fp64_sub(v, wgx_fp64_mul(wg_fp64_floor(wgx_fp64_add(wgx_fp64_mul(v, D64_INV_WRAP), D64_HALF)), D64_WRAP));
 }
 
 int permAt(int base, int index) { return int(perm[base + (index & 255)]); }
 
 uvec2 gradDot(int hash, uvec2 x, uvec2 y, uvec2 z) {
     switch (hash & 15) {
-        case 0: return wg_fp64_add(x, y);
-        case 1: return wg_fp64_add(wg_fp64_negate(x), y);
-        case 2: return wg_fp64_sub(x, y);
-        case 3: return wg_fp64_sub(wg_fp64_negate(x), y);
-        case 4: return wg_fp64_add(x, z);
-        case 5: return wg_fp64_add(wg_fp64_negate(x), z);
-        case 6: return wg_fp64_sub(x, z);
-        case 7: return wg_fp64_sub(wg_fp64_negate(x), z);
-        case 8: return wg_fp64_add(y, z);
-        case 9: return wg_fp64_add(wg_fp64_negate(y), z);
-        case 10: return wg_fp64_sub(y, z);
-        case 11: return wg_fp64_sub(wg_fp64_negate(y), z);
-        case 12: return wg_fp64_add(x, y);
-        case 13: return wg_fp64_add(wg_fp64_negate(y), z);
-        case 14: return wg_fp64_add(wg_fp64_negate(x), y);
-        default: return wg_fp64_sub(wg_fp64_negate(y), z);
+        case 0: return wgx_fp64_add(x, y);
+        case 1: return wgx_fp64_add(wg_fp64_negate(x), y);
+        case 2: return wgx_fp64_sub(x, y);
+        case 3: return wgx_fp64_sub(wg_fp64_negate(x), y);
+        case 4: return wgx_fp64_add(x, z);
+        case 5: return wgx_fp64_add(wg_fp64_negate(x), z);
+        case 6: return wgx_fp64_sub(x, z);
+        case 7: return wgx_fp64_sub(wg_fp64_negate(x), z);
+        case 8: return wgx_fp64_add(y, z);
+        case 9: return wgx_fp64_add(wg_fp64_negate(y), z);
+        case 10: return wgx_fp64_sub(y, z);
+        case 11: return wgx_fp64_sub(wg_fp64_negate(y), z);
+        case 12: return wgx_fp64_add(x, y);
+        case 13: return wgx_fp64_add(wg_fp64_negate(y), z);
+        case 14: return wgx_fp64_add(wg_fp64_negate(x), y);
+        default: return wgx_fp64_sub(wg_fp64_negate(y), z);
     }
 }
 
 uvec2 improvedNoise(int permBase, uvec2 xo, uvec2 yo, uvec2 zo,
                     uvec2 x, uvec2 y, uvec2 z, uvec2 yScale, uvec2 yMax) {
-    uvec2 sx = wg_fp64_add(x, xo), sy = wg_fp64_add(y, yo), sz = wg_fp64_add(z, zo);
+    uvec2 sx = wgx_fp64_add(x, xo), sy = wgx_fp64_add(y, yo), sz = wgx_fp64_add(z, zo);
     int x0 = mfloor(sx), y0 = mfloor(sy), z0 = mfloor(sz);
-    uvec2 fx = wg_fp64_sub(sx, wg_fp64_from_int(x0)), fy = wg_fp64_sub(sy, wg_fp64_from_int(y0)), fz = wg_fp64_sub(sz, wg_fp64_from_int(z0));
+    uvec2 fx = wgx_fp64_sub(sx, wg_fp64_from_int(x0)), fy = wgx_fp64_sub(sy, wg_fp64_from_int(y0)), fz = wgx_fp64_sub(sz, wg_fp64_from_int(z0));
     uvec2 smear = D64_ZERO;
     if (!wg_fp64_equal(yScale, D64_ZERO)) {
         uvec2 clamped = (wg_fp64_less_equal(D64_ZERO, yMax) && wg_fp64_less(yMax, fy)) ? yMax : fy;
-        smear = wg_fp64_mul(wg_fp64_floor(wg_fp64_add(jdiv(clamped, yScale), D64_SMEAR_EPSILON)), yScale);
+        smear = wgx_fp64_mul(wg_fp64_floor(wgx_fp64_add(jdiv(clamped, yScale), D64_SMEAR_EPSILON)), yScale);
     }
-    uvec2 afy = wg_fp64_sub(fy, smear);
+    uvec2 afy = wgx_fp64_sub(fy, smear);
     int xh = permAt(permBase, x0), xhn = permAt(permBase, x0 + 1);
     int xy00 = permAt(permBase, xh + y0), xy01 = permAt(permBase, xh + y0 + 1);
     int xy10 = permAt(permBase, xhn + y0), xy11 = permAt(permBase, xhn + y0 + 1);
     uvec2 v000 = gradDot(permAt(permBase, xy00 + z0), fx, afy, fz);
-    uvec2 v100 = gradDot(permAt(permBase, xy10 + z0), wg_fp64_sub(fx, D64_ONE), afy, fz);
-    uvec2 v010 = gradDot(permAt(permBase, xy01 + z0), fx, wg_fp64_sub(afy, D64_ONE), fz);
-    uvec2 v110 = gradDot(permAt(permBase, xy11 + z0), wg_fp64_sub(fx, D64_ONE), wg_fp64_sub(afy, D64_ONE), fz);
-    uvec2 v001 = gradDot(permAt(permBase, xy00 + z0 + 1), fx, afy, wg_fp64_sub(fz, D64_ONE));
-    uvec2 v101 = gradDot(permAt(permBase, xy10 + z0 + 1), wg_fp64_sub(fx, D64_ONE), afy, wg_fp64_sub(fz, D64_ONE));
-    uvec2 v011 = gradDot(permAt(permBase, xy01 + z0 + 1), fx, wg_fp64_sub(afy, D64_ONE), wg_fp64_sub(fz, D64_ONE));
-    uvec2 v111 = gradDot(permAt(permBase, xy11 + z0 + 1), wg_fp64_sub(fx, D64_ONE), wg_fp64_sub(afy, D64_ONE), wg_fp64_sub(fz, D64_ONE));
+    uvec2 v100 = gradDot(permAt(permBase, xy10 + z0), wgx_fp64_sub(fx, D64_ONE), afy, fz);
+    uvec2 v010 = gradDot(permAt(permBase, xy01 + z0), fx, wgx_fp64_sub(afy, D64_ONE), fz);
+    uvec2 v110 = gradDot(permAt(permBase, xy11 + z0), wgx_fp64_sub(fx, D64_ONE), wgx_fp64_sub(afy, D64_ONE), fz);
+    uvec2 v001 = gradDot(permAt(permBase, xy00 + z0 + 1), fx, afy, wgx_fp64_sub(fz, D64_ONE));
+    uvec2 v101 = gradDot(permAt(permBase, xy10 + z0 + 1), wgx_fp64_sub(fx, D64_ONE), afy, wgx_fp64_sub(fz, D64_ONE));
+    uvec2 v011 = gradDot(permAt(permBase, xy01 + z0 + 1), fx, wgx_fp64_sub(afy, D64_ONE), wgx_fp64_sub(fz, D64_ONE));
+    uvec2 v111 = gradDot(permAt(permBase, xy11 + z0 + 1), wgx_fp64_sub(fx, D64_ONE), wgx_fp64_sub(afy, D64_ONE), wgx_fp64_sub(fz, D64_ONE));
     uvec2 tx = smoothstepd(fx), ty = smoothstepd(fy), tz = smoothstepd(fz);
     uvec2 x00 = lerpd(tx, v000, v100), x10 = lerpd(tx, v010, v110);
     uvec2 x01 = lerpd(tx, v001, v101), x11 = lerpd(tx, v011, v111);
@@ -240,8 +240,8 @@ uvec2 perlinValue(int P, uvec2 x, uvec2 y, uvec2 z) {
         if (permBase >= 0) {
             uvec2 f = dtab[L + 1];
             uvec2 noise = improvedNoise(permBase, dtab[L + 3], dtab[L + 4], dtab[L + 5],
-                    wrapd(wg_fp64_mul(x, f)), wrapd(wg_fp64_mul(y, f)), wrapd(wg_fp64_mul(z, f)), D64_ZERO, D64_ZERO);
-            result = wg_fp64_add(result, wg_fp64_mul(wg_fp64_mul(dtab[L], noise), dtab[L + 2]));
+                    wrapd(wgx_fp64_mul(x, f)), wrapd(wgx_fp64_mul(y, f)), wrapd(wgx_fp64_mul(z, f)), D64_ZERO, D64_ZERO);
+            result = wgx_fp64_add(result, wgx_fp64_mul(wgx_fp64_mul(dtab[L], noise), dtab[L + 2]));
         }
     }
     return result;
@@ -251,8 +251,8 @@ uvec2 perlinValue(int P, uvec2 x, uvec2 y, uvec2 z) {
 uvec2 normalNoise(int N, uvec2 x, uvec2 y, uvec2 z) {
     uvec2 first = perlinValue(wgf_fp64_to_i32_java(dtab[N + 1]), x, y, z);
     uvec2 factor = D64_NOISE_FACTOR;
-    uvec2 second = perlinValue(wgf_fp64_to_i32_java(dtab[N + 2]), wg_fp64_mul(x, factor), wg_fp64_mul(y, factor), wg_fp64_mul(z, factor));
-    return wg_fp64_mul(wg_fp64_add(first, second), dtab[N]);
+    uvec2 second = perlinValue(wgf_fp64_to_i32_java(dtab[N + 2]), wgx_fp64_mul(x, factor), wgx_fp64_mul(y, factor), wgx_fp64_mul(z, factor));
+    return wgx_fp64_mul(wgx_fp64_add(first, second), dtab[N]);
 }
 
 // One BlendedNoise legacy octave: levels indexed from the end of the octave array.
@@ -263,48 +263,48 @@ uvec2 legacyLevel(int P, int octave, uvec2 x, uvec2 y, uvec2 z, uvec2 yScale, uv
     int L = P + 1 + levelIndex * PERLIN_STRIDE;
     int permBase = wgf_fp64_to_i32_java(dtab[L + 6]);
     if (permBase < 0) return D64_ZERO;
-    return wg_fp64_mul(dtab[L], improvedNoise(permBase, dtab[L + 3], dtab[L + 4], dtab[L + 5], x, y, z, yScale, yMax));
+    return wgx_fp64_mul(dtab[L], improvedNoise(permBase, dtab[L + 3], dtab[L + 4], dtab[L + 5], x, y, z, yScale, yMax));
 }
 
 // BlendedNoise record at index B: [xzScale, yScale, xzFactor, yFactor, smearScaleMultiplier, minP, maxP, mainP]
 uvec2 blendedNoise(int B, int bx, int by, int bz) {
-    uvec2 xzMultiplier = wg_fp64_mul(D64_BLEND_SCALE, dtab[B]);
-    uvec2 yMultiplier = wg_fp64_mul(D64_BLEND_SCALE, dtab[B + 1]);
-    uvec2 xValue = wg_fp64_mul(wg_fp64_from_int(bx), xzMultiplier);
-    uvec2 yValue = wg_fp64_mul(wg_fp64_from_int(by), yMultiplier);
-    uvec2 zValue = wg_fp64_mul(wg_fp64_from_int(bz), xzMultiplier);
+    uvec2 xzMultiplier = wgx_fp64_mul(D64_BLEND_SCALE, dtab[B]);
+    uvec2 yMultiplier = wgx_fp64_mul(D64_BLEND_SCALE, dtab[B + 1]);
+    uvec2 xValue = wgx_fp64_mul(wg_fp64_from_int(bx), xzMultiplier);
+    uvec2 yValue = wgx_fp64_mul(wg_fp64_from_int(by), yMultiplier);
+    uvec2 zValue = wgx_fp64_mul(wg_fp64_from_int(bz), xzMultiplier);
     uvec2 mainX = jdiv(xValue, dtab[B + 2]);
     uvec2 mainY = jdiv(yValue, dtab[B + 3]);
     uvec2 mainZ = jdiv(zValue, dtab[B + 2]);
-    uvec2 smearScale = jdiv(wg_fp64_mul(yMultiplier, dtab[B + 4]), dtab[B + 3]);
+    uvec2 smearScale = jdiv(wgx_fp64_mul(yMultiplier, dtab[B + 4]), dtab[B + 3]);
     int minP = wgf_fp64_to_i32_java(dtab[B + 5]), maxP = wgf_fp64_to_i32_java(dtab[B + 6]), mainP = wgf_fp64_to_i32_java(dtab[B + 7]);
     uvec2 main = D64_ZERO;
     uvec2 mainScale = D64_ONE;
     uvec2 inverse = D64_ONE;
     for (int i = 0; i < 8; i++) {
-        main = wg_fp64_add(main, wg_fp64_mul(legacyLevel(mainP, i, wrapd(wg_fp64_mul(mainX, mainScale)), wrapd(wg_fp64_mul(mainY, mainScale)), wrapd(wg_fp64_mul(mainZ, mainScale)),
-                wg_fp64_mul(smearScale, mainScale), wg_fp64_mul(mainY, mainScale)), inverse));
-        mainScale = wg_fp64_mul(mainScale, D64_HALF);
-        inverse = wg_fp64_mul(inverse, D64_TWO);
+        main = wgx_fp64_add(main, wgx_fp64_mul(legacyLevel(mainP, i, wrapd(wgx_fp64_mul(mainX, mainScale)), wrapd(wgx_fp64_mul(mainY, mainScale)), wrapd(wgx_fp64_mul(mainZ, mainScale)),
+                wgx_fp64_mul(smearScale, mainScale), wgx_fp64_mul(mainY, mainScale)), inverse));
+        mainScale = wgx_fp64_mul(mainScale, D64_HALF);
+        inverse = wgx_fp64_mul(inverse, D64_TWO);
     }
-    uvec2 blend = wg_fp64_mul(wg_fp64_add(jdiv(main, D64_TEN), D64_ONE), D64_HALF);
+    uvec2 blend = wgx_fp64_mul(wgx_fp64_add(jdiv(main, D64_TEN), D64_ONE), D64_HALF);
     bool skipMin = wg_fp64_less_equal(D64_ONE, blend);
     bool skipMax = wg_fp64_less_equal(blend, D64_ZERO);
     uvec2 minV = D64_ZERO, maxV = D64_ZERO;
     uvec2 limitScale = D64_ONE;
     uvec2 limitInverse = D64_ONE;
-    uvec2 limitSmear = wg_fp64_mul(yMultiplier, dtab[B + 4]);
+    uvec2 limitSmear = wgx_fp64_mul(yMultiplier, dtab[B + 4]);
     for (int i = 0; i < 16; i++) {
-        uvec2 wx = wrapd(wg_fp64_mul(xValue, limitScale)), wy = wrapd(wg_fp64_mul(yValue, limitScale)), wz = wrapd(wg_fp64_mul(zValue, limitScale));
-        if (!skipMin) minV = wg_fp64_add(minV, wg_fp64_mul(legacyLevel(minP, i, wx, wy, wz, wg_fp64_mul(limitSmear, limitScale), wg_fp64_mul(yValue, limitScale)), limitInverse));
-        if (!skipMax) maxV = wg_fp64_add(maxV, wg_fp64_mul(legacyLevel(maxP, i, wx, wy, wz, wg_fp64_mul(limitSmear, limitScale), wg_fp64_mul(yValue, limitScale)), limitInverse));
-        limitScale = wg_fp64_mul(limitScale, D64_HALF);
-        limitInverse = wg_fp64_mul(limitInverse, D64_TWO);
+        uvec2 wx = wrapd(wgx_fp64_mul(xValue, limitScale)), wy = wrapd(wgx_fp64_mul(yValue, limitScale)), wz = wrapd(wgx_fp64_mul(zValue, limitScale));
+        if (!skipMin) minV = wgx_fp64_add(minV, wgx_fp64_mul(legacyLevel(minP, i, wx, wy, wz, wgx_fp64_mul(limitSmear, limitScale), wgx_fp64_mul(yValue, limitScale)), limitInverse));
+        if (!skipMax) maxV = wgx_fp64_add(maxV, wgx_fp64_mul(legacyLevel(maxP, i, wx, wy, wz, wgx_fp64_mul(limitSmear, limitScale), wgx_fp64_mul(yValue, limitScale)), limitInverse));
+        limitScale = wgx_fp64_mul(limitScale, D64_HALF);
+        limitInverse = wgx_fp64_mul(limitInverse, D64_TWO);
     }
-    uvec2 lower = wg_fp64_mul(minV, D64_INV_512);
-    uvec2 upper = wg_fp64_mul(maxV, D64_INV_512);
+    uvec2 lower = wgx_fp64_mul(minV, D64_INV_512);
+    uvec2 upper = wgx_fp64_mul(maxV, D64_INV_512);
     uvec2 clampedBlend = jmax(D64_ZERO, jmin(D64_ONE, blend));
-    return wg_fp64_mul(wg_fp64_add(lower, wg_fp64_mul(clampedBlend, wg_fp64_sub(upper, lower))), D64_INV_128);
+    return wgx_fp64_mul(wgx_fp64_add(lower, wgx_fp64_mul(clampedBlend, wgx_fp64_sub(upper, lower))), D64_INV_128);
 }
 
 // ------------------------------------------------------------ End island ---
@@ -314,16 +314,16 @@ const uvec2 SIMPLEX_G2 = uvec2(0x74df99c8u, 0x3fcb0cb1u); // 0.21132486540518713
 const uvec2 SIMPLEX_2G2 = uvec2(0x74df99c8u, 0x3fdb0cb1u); // 0.42264973081037427
 
 uvec2 simplexCorner(int hash, uvec2 x, uvec2 y) {
-    uvec2 att = wg_fp64_sub(wg_fp64_sub(D64_HALF, wg_fp64_mul(x, x)), wg_fp64_mul(y, y));
+    uvec2 att = wgx_fp64_sub(wgx_fp64_sub(D64_HALF, wgx_fp64_mul(x, x)), wgx_fp64_mul(y, y));
     if (wg_fp64_less(att, D64_ZERO)) return D64_ZERO;
-    att = wg_fp64_mul(att, att);
+    att = wgx_fp64_mul(att, att);
     int h = hash % 12;
     uvec2 g;
     switch (h) {
-        case 0: g = wg_fp64_add(x, y); break;
-        case 1: g = wg_fp64_add(wg_fp64_negate(x), y); break;
-        case 2: g = wg_fp64_sub(x, y); break;
-        case 3: g = wg_fp64_sub(wg_fp64_negate(x), y); break;
+        case 0: g = wgx_fp64_add(x, y); break;
+        case 1: g = wgx_fp64_add(wg_fp64_negate(x), y); break;
+        case 2: g = wgx_fp64_sub(x, y); break;
+        case 3: g = wgx_fp64_sub(wg_fp64_negate(x), y); break;
         case 4: g = x; break;
         case 5: g = wg_fp64_negate(x); break;
         case 6: g = x; break;
@@ -333,29 +333,29 @@ uvec2 simplexCorner(int hash, uvec2 x, uvec2 y) {
         case 10: g = y; break;
         default: g = wg_fp64_negate(y); break;
     }
-    return wg_fp64_mul(wg_fp64_mul(att, att), g);
+    return wgx_fp64_mul(wgx_fp64_mul(att, att), g);
 }
 
 uvec2 simplex2D(int permBase, uvec2 x, uvec2 y) {
-    uvec2 skew = wg_fp64_mul(wg_fp64_add(x, y), SIMPLEX_F2);
-    int lx = mfloor(wg_fp64_add(x, skew));
-    int ly = mfloor(wg_fp64_add(y, skew));
-    uvec2 unskew = wg_fp64_mul(wg_fp64_from_int(lx + ly), SIMPLEX_G2);
-    uvec2 x0 = wg_fp64_sub(x, wg_fp64_sub(wg_fp64_from_int(lx), unskew));
-    uvec2 y0 = wg_fp64_sub(y, wg_fp64_sub(wg_fp64_from_int(ly), unskew));
+    uvec2 skew = wgx_fp64_mul(wgx_fp64_add(x, y), SIMPLEX_F2);
+    int lx = mfloor(wgx_fp64_add(x, skew));
+    int ly = mfloor(wgx_fp64_add(y, skew));
+    uvec2 unskew = wgx_fp64_mul(wg_fp64_from_int(lx + ly), SIMPLEX_G2);
+    uvec2 x0 = wgx_fp64_sub(x, wgx_fp64_sub(wg_fp64_from_int(lx), unskew));
+    uvec2 y0 = wgx_fp64_sub(y, wgx_fp64_sub(wg_fp64_from_int(ly), unskew));
     int ox = wg_fp64_less(y0, x0) ? 1 : 0;
     int oy = wg_fp64_less(y0, x0) ? 0 : 1;
-    uvec2 x1 = wg_fp64_add(wg_fp64_sub(x0, wg_fp64_from_int(ox)), SIMPLEX_G2);
-    uvec2 y1 = wg_fp64_add(wg_fp64_sub(y0, wg_fp64_from_int(oy)), SIMPLEX_G2);
-    uvec2 x2 = wg_fp64_add(wg_fp64_sub(x0, D64_ONE), SIMPLEX_2G2);
-    uvec2 y2 = wg_fp64_add(wg_fp64_sub(y0, D64_ONE), SIMPLEX_2G2);
+    uvec2 x1 = wgx_fp64_add(wgx_fp64_sub(x0, wg_fp64_from_int(ox)), SIMPLEX_G2);
+    uvec2 y1 = wgx_fp64_add(wgx_fp64_sub(y0, wg_fp64_from_int(oy)), SIMPLEX_G2);
+    uvec2 x2 = wgx_fp64_add(wgx_fp64_sub(x0, D64_ONE), SIMPLEX_2G2);
+    uvec2 y2 = wgx_fp64_add(wgx_fp64_sub(y0, D64_ONE), SIMPLEX_2G2);
     int h0 = permAt(permBase, lx + permAt(permBase, ly)) % 12;
     int h1 = permAt(permBase, lx + ox + permAt(permBase, ly + oy)) % 12;
     int h2 = permAt(permBase, lx + 1 + permAt(permBase, ly + 1)) % 12;
     uvec2 n0 = simplexCorner(h0, x0, y0);
     uvec2 n1 = simplexCorner(h1, x1, y1);
     uvec2 n2 = simplexCorner(h2, x2, y2);
-    return wg_fp64_mul(D64_SEVENTY, wg_fp64_add(wg_fp64_add(n0, n1), n2));
+    return wgx_fp64_mul(D64_SEVENTY, wgx_fp64_add(wgx_fp64_add(n0, n1), n2));
 }
 
 uvec2 endIsland(int E, int bx, int bz) {
@@ -369,25 +369,25 @@ uvec2 endIsland(int E, int bx, int bz) {
     // Java's int arithmetic wraps here far from the origin (vanilla's rings beyond about 370,000 blocks), but
     // Metal may assume signed arithmetic does not overflow and drop the negative-argument check below, so the
     // sum is formed in unsigned arithmetic, which wraps by definition, and reinterpreted.
-    uint height = wg_fp32_sub(F32_HUNDRED, wg_fp32_mul(jsqrtf(wg_fp32_from_int(int(uint(x) * uint(x) + uint(z) * uint(z)))), F32_EIGHT));
+    uint height = wgx_fp32_sub(F32_HUNDRED, wgx_fp32_mul(jsqrtf(wg_fp32_from_int(int(uint(x) * uint(x) + uint(z) * uint(z)))), F32_EIGHT));
     height = jmaxf(F32_NEG_HUNDRED, jminf(F32_EIGHTY, height));
     for (int i = -12; i <= 12; i++) {
         for (int j = -12; j <= 12; j++) {
             int64_t ix = int64_t(gridX) + int64_t(i);
             int64_t iz = int64_t(gridZ) + int64_t(j);
             if (ix * ix + iz * iz > 4096l && wg_fp64_less(simplex2D(permBase, wgf_fp64_from_i64(unpackUint2x32(uint64_t(ix))), wgf_fp64_from_i64(unpackUint2x32(uint64_t(iz)))), D64_ISLAND_LIMIT)) {
-                uint scale = wg_fp32_add(wg_fp32_mul(wgf_fp32_from_i64(unpackUint2x32(uint64_t(abs(ix)))), F32_3439), wg_fp32_mul(wgf_fp32_from_i64(unpackUint2x32(uint64_t(abs(iz)))), F32_147));
+                uint scale = wgx_fp32_add(wgx_fp32_mul(wgf_fp32_from_i64(unpackUint2x32(uint64_t(abs(ix)))), F32_3439), wgx_fp32_mul(wgf_fp32_from_i64(unpackUint2x32(uint64_t(abs(iz)))), F32_147));
                 scale = jremf(scale, F32_THIRTEEN);
-                scale = wg_fp32_add(scale, F32_NINE);
+                scale = wgx_fp32_add(scale, F32_NINE);
                 uint lx = wg_fp32_from_int(remX - i * 2);
                 uint lz = wg_fp32_from_int(remZ - j * 2);
-                uint h = wg_fp32_sub(F32_HUNDRED, wg_fp32_mul(jsqrtf(wg_fp32_add(wg_fp32_mul(lx, lx), wg_fp32_mul(lz, lz))), scale));
+                uint h = wgx_fp32_sub(F32_HUNDRED, wgx_fp32_mul(jsqrtf(wgx_fp32_add(wgx_fp32_mul(lx, lx), wgx_fp32_mul(lz, lz))), scale));
                 h = jmaxf(F32_NEG_HUNDRED, jminf(F32_EIGHTY, h));
                 height = jmaxf(height, h);
             }
         }
     }
-    return jdiv(wg_fp64_sub(wg_fp64_from_fp32(height), D64_EIGHT), D64_128);
+    return jdiv(wgx_fp64_sub(wg_fp64_from_fp32(height), D64_EIGHT), D64_128);
 }
 
 // ------------------------------------------------------------- random -----
@@ -454,8 +454,8 @@ int rngNextInt(inout Rng r, int bound) {
     return int(product >> 32);
 }
 uint rngNextFloat(inout Rng r) {
-    if (r.isLegacy) return wg_fp32_mul(wg_fp32_from_int(legacyBits(r, 24)), F32_RNG_SCALE);
-    return wg_fp32_mul(wg_fp32_from_int(int(uint64_t(xoroNext(r)) >> 40)), F32_RNG_SCALE);
+    if (r.isLegacy) return wgx_fp32_mul(wg_fp32_from_int(legacyBits(r, 24)), F32_RNG_SCALE);
+    return wgx_fp32_mul(wg_fp32_from_int(int(uint64_t(xoroNext(r)) >> 40)), F32_RNG_SCALE);
 }
 
 // ------------------------------------------------------------- splines ---
@@ -514,7 +514,7 @@ uint splineEval(int root, uint cs[SPLINE_COORDS]) {
             if (iv < 0 || iv == n - 1) {
                 int at = iv < 0 ? 0 : n - 1;
                 uint d = sDer(N, at);
-                result = wg_fp32_equal(d, F32_ZERO) ? sV0[sp] : wg_fp32_add(sV0[sp], wg_fp32_mul(d, wg_fp32_sub(c, sLoc(N, at))));
+                result = wg_fp32_equal(d, F32_ZERO) ? sV0[sp] : wgx_fp32_add(sV0[sp], wgx_fp32_mul(d, wgx_fp32_sub(c, sLoc(N, at))));
                 ready = true;
             } else {
                 sState[sp] = 2;
@@ -534,14 +534,14 @@ uint splineEval(int root, uint cs[SPLINE_COORDS]) {
             int iv = sIv[sp];
             uint l0 = sLoc(N, iv);
             uint l1 = sLoc(N, iv + 1);
-            uint span = wg_fp32_sub(l1, l0);
-            uint t = jdivf(wg_fp32_sub(c, l0), span);
+            uint span = wgx_fp32_sub(l1, l0);
+            uint t = jdivf(wgx_fp32_sub(c, l0), span);
             uint v0 = sV0[sp];
             uint v1 = sV1[sp];
-            uint delta = wg_fp32_sub(v1, v0);
-            uint a = wg_fp32_sub(wg_fp32_mul(sDer(N, iv), span), delta);
-            uint b = wg_fp32_add(wg_fp32_mul(wg_fp32_negate(sDer(N, iv + 1)), span), delta);
-            result = wg_fp32_add(lerpf(t, v0, v1), wg_fp32_mul(wg_fp32_mul(t, wg_fp32_sub(F32_ONE, t)), lerpf(t, a, b)));
+            uint delta = wgx_fp32_sub(v1, v0);
+            uint a = wgx_fp32_sub(wgx_fp32_mul(sDer(N, iv), span), delta);
+            uint b = wgx_fp32_add(wgx_fp32_mul(wg_fp32_negate(sDer(N, iv + 1)), span), delta);
+            result = wgx_fp32_add(lerpf(t, v0, v1), wgx_fp32_mul(wgx_fp32_mul(t, wgx_fp32_sub(F32_ONE, t)), lerpf(t, a, b)));
         }
         sp--;
         if (sp < 0) return result;

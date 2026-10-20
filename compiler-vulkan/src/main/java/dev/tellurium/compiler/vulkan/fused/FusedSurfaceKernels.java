@@ -513,9 +513,9 @@ final class FusedSurfaceKernels {
                     int i = legacyBits(r, 26);
                     int j = legacyBits(r, 27);
                     int64_t k = (int64_t(i) << 27) + int64_t(j);
-                    return wg_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(k))), LEGACY_DOUBLE_UNIT);
+                    return wgx_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(k))), LEGACY_DOUBLE_UNIT);
                 }
-                return wg_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(xoroNext(r)) >> 11)), 1.1102230246251565E-16lf);
+                return wgx_fp64_mul(wgf_fp64_from_i64(unpackUint2x32(uint64_t(xoroNext(r)) >> 11)), 1.1102230246251565E-16lf);
             }"""),
         ieee("""
             precise double fiddle(int64_t v) {
@@ -524,8 +524,8 @@ final class FusedSurfaceKernels {
             }""",
              """
             uvec2 fiddle(int64_t v) {
-                uvec2 d = wg_fp64_mul(wg_fp64_from_int(int((v >> 24) & 1023l)), 0.0009765625lf);
-                return wg_fp64_mul(wg_fp64_sub(d, 0.5lf), 0.9lf);
+                uvec2 d = wgx_fp64_mul(wg_fp64_from_int(int((v >> 24) & 1023l)), 0.0009765625lf);
+                return wgx_fp64_mul(wgx_fp64_sub(d, 0.5lf), 0.9lf);
             }"""),
         ieee("""
             precise double fiddledDistance(int64_t seed, int qx, int qy, int qz, double fx, double fy, double fz) {
@@ -561,13 +561,13 @@ final class FusedSurfaceKernels {
                 uvec2 d1 = fiddle(v);
                 v = lcgNext(v, seed);
                 uvec2 d2 = fiddle(v);
-                uvec2 a = wg_fp64_add(fz, d2);
-                uvec2 b = wg_fp64_add(fy, d1);
-                uvec2 c = wg_fp64_add(fx, d0);
-                uvec2 aa = wg_fp64_mul(a, a);
-                uvec2 bb = wg_fp64_mul(b, b);
-                uvec2 cc = wg_fp64_mul(c, c);
-                return wg_fp64_add(wg_fp64_add(aa, bb), cc);
+                uvec2 a = wgx_fp64_add(fz, d2);
+                uvec2 b = wgx_fp64_add(fy, d1);
+                uvec2 c = wgx_fp64_add(fx, d0);
+                uvec2 aa = wgx_fp64_mul(a, a);
+                uvec2 bb = wgx_fp64_mul(b, b);
+                uvec2 cc = wgx_fp64_mul(c, c);
+                return wgx_fp64_add(wgx_fp64_add(aa, bb), cc);
             }"""),
         ieee("""
             int biomeAt(int x, int y, int z) {
@@ -592,15 +592,15 @@ final class FusedSurfaceKernels {
                 int64_t seed = u64at(gSurf + 20);
                 int i = x - 2, j = y - 2, k = z - 2;
                 int l = i >> 2, i1 = j >> 2, j1 = k >> 2;
-                uvec2 d0 = wg_fp64_mul(wg_fp64_from_int(i & 3), 0.25lf);
-                uvec2 d1 = wg_fp64_mul(wg_fp64_from_int(j & 3), 0.25lf);
-                uvec2 d2 = wg_fp64_mul(wg_fp64_from_int(k & 3), 0.25lf);
+                uvec2 d0 = wgx_fp64_mul(wg_fp64_from_int(i & 3), 0.25lf);
+                uvec2 d1 = wgx_fp64_mul(wg_fp64_from_int(j & 3), 0.25lf);
+                uvec2 d2 = wgx_fp64_mul(wg_fp64_from_int(k & 3), 0.25lf);
                 int best = 0;
                 uvec2 d3 = uvec2(0u, 0x7ff00000u);
                 for (int n = 0; n < 8; n++) {
                     bool f0 = (n & 4) == 0, f1 = (n & 2) == 0, f2 = (n & 1) == 0;
                     uvec2 d7 = fiddledDistance(seed, f0 ? l : l + 1, f1 ? i1 : i1 + 1, f2 ? j1 : j1 + 1,
-                            f0 ? d0 : wg_fp64_sub(d0, 1.0lf), f1 ? d1 : wg_fp64_sub(d1, 1.0lf), f2 ? d2 : wg_fp64_sub(d2, 1.0lf));
+                            f0 ? d0 : wgx_fp64_sub(d0, 1.0lf), f1 ? d1 : wgx_fp64_sub(d1, 1.0lf), f2 ? d2 : wgx_fp64_sub(d2, 1.0lf));
                     if (wg_fp64_less(d7, d3)) { best = n; d3 = d7; }
                 }
                 return biomeIdAt((best & 4) == 0 ? l : l + 1, (best & 2) == 0 ? i1 : i1 + 1, (best & 1) == 0 ? j1 : j1 + 1);
@@ -609,11 +609,11 @@ final class FusedSurfaceKernels {
             precise double d1 = jmin(abs(normalNoise(sh(14), double(gX), 0.0lf, double(gZ)) * 8.25lf),
                         normalNoise(sh(12), double(gX) * 0.2lf, 0.0lf, double(gZ) * 0.2lf) * 15.0lf);""",
              """
-            uvec2 d1 = jmin(wg_fp64_abs(wg_fp64_mul(normalNoise(sh(14), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
-                        wg_fp64_mul(normalNoise(sh(12), wg_fp64_mul(wg_fp64_from_int(gX), 0.2lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 0.2lf)), 15.0lf));"""),
+            uvec2 d1 = jmin(wg_fp64_abs(wgx_fp64_mul(normalNoise(sh(14), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
+                        wgx_fp64_mul(normalNoise(sh(12), wgx_fp64_mul(wg_fp64_from_int(gX), 0.2lf), 0.0lf, wgx_fp64_mul(wg_fp64_from_int(gZ), 0.2lf)), 15.0lf));"""),
         ieee("if (!(d1 <= 0.0lf)) {", "if (!wg_fp64_less_equal(d1, 0.0lf)) {"),
-        ieee("precise double d4 = abs(normalNoise(sh(13), double(gX) * 0.75lf, 0.0lf, double(gZ) * 0.75lf) * 1.5lf);", "uvec2 d4 = wg_fp64_abs(wg_fp64_mul(normalNoise(sh(13), wg_fp64_mul(wg_fp64_from_int(gX), 0.75lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 0.75lf)), 1.5lf));"),
-        ieee("precise double d5 = 64.0lf + jmin(d1 * d1 * 2.5lf, ceil(d4 * 50.0lf) + 24.0lf);", "uvec2 d5 = wg_fp64_add(64.0lf, jmin(wg_fp64_mul(wg_fp64_mul(d1, d1), 2.5lf), wg_fp64_add(wgf_fp64_ceil(wg_fp64_mul(d4, 50.0lf)), 24.0lf)));"),
+        ieee("precise double d4 = abs(normalNoise(sh(13), double(gX) * 0.75lf, 0.0lf, double(gZ) * 0.75lf) * 1.5lf);", "uvec2 d4 = wg_fp64_abs(wgx_fp64_mul(normalNoise(sh(13), wgx_fp64_mul(wg_fp64_from_int(gX), 0.75lf), 0.0lf, wgx_fp64_mul(wg_fp64_from_int(gZ), 0.75lf)), 1.5lf));"),
+        ieee("precise double d5 = 64.0lf + jmin(d1 * d1 * 2.5lf, ceil(d4 * 50.0lf) + 24.0lf);", "uvec2 d5 = wgx_fp64_add(64.0lf, jmin(wgx_fp64_mul(wgx_fp64_mul(d1, d1), 2.5lf), wgx_fp64_add(wgf_fp64_ceil(wgx_fp64_mul(d4, 50.0lf)), 24.0lf)));"),
         ieee("""
             precise double simplexOctaves(int S, double x, double y) {
                 int n = int(dtab[S]);
@@ -636,9 +636,9 @@ final class FusedSurfaceKernels {
                 uvec2 d2 = dtab[S + 2];
                 for (int i = 0; i < n; i++) {
                     int permBase = wgf_fp64_to_i32_java(dtab[S + 3 + i]);
-                    if (permBase >= 0) result = wg_fp64_add(result, wg_fp64_mul(simplex2D(permBase, wg_fp64_add(wg_fp64_mul(x, d1), 0.0lf), wg_fp64_add(wg_fp64_mul(y, d1), 0.0lf)), d2));
-                    d1 = wg_fp64_mul(d1, 0.5lf);
-                    d2 = wg_fp64_mul(d2, 2.0lf);
+                    if (permBase >= 0) result = wgx_fp64_add(result, wgx_fp64_mul(simplex2D(permBase, wgx_fp64_add(wgx_fp64_mul(x, d1), 0.0lf), wgx_fp64_add(wgx_fp64_mul(y, d1), 0.0lf)), d2));
+                    d1 = wgx_fp64_mul(d1, 0.5lf);
+                    d2 = wgx_fp64_mul(d2, 2.0lf);
                 }
                 return result;
             }"""),
@@ -667,27 +667,27 @@ final class FusedSurfaceKernels {
                 int T = sh(6) + biome * 2;
                 uint f = perm[T];
                 if ((int(perm[T + 1]) & 1) != 0) {
-                    uvec2 d0 = wg_fp64_mul(simplexOctaves(sh(26), wg_fp64_mul(wg_fp64_from_int(x), 0.05lf), wg_fp64_mul(wg_fp64_from_int(z), 0.05lf)), 7.0lf);
-                    uvec2 d1 = simplexOctaves(sh(27), wg_fp64_mul(wg_fp64_from_int(x), 0.2lf), wg_fp64_mul(wg_fp64_from_int(z), 0.2lf));
-                    uvec2 d2 = wg_fp64_add(d0, d1);
+                    uvec2 d0 = wgx_fp64_mul(simplexOctaves(sh(26), wgx_fp64_mul(wg_fp64_from_int(x), 0.05lf), wgx_fp64_mul(wg_fp64_from_int(z), 0.05lf)), 7.0lf);
+                    uvec2 d1 = simplexOctaves(sh(27), wgx_fp64_mul(wg_fp64_from_int(x), 0.2lf), wgx_fp64_mul(wg_fp64_from_int(z), 0.2lf));
+                    uvec2 d2 = wgx_fp64_add(d0, d1);
                     if (wg_fp64_less(d2, 0.3lf)) {
-                        uvec2 d3 = simplexOctaves(sh(27), wg_fp64_mul(wg_fp64_from_int(x), 0.09lf), wg_fp64_mul(wg_fp64_from_int(z), 0.09lf));
+                        uvec2 d3 = simplexOctaves(sh(27), wgx_fp64_mul(wg_fp64_from_int(x), 0.09lf), wgx_fp64_mul(wg_fp64_from_int(z), 0.09lf));
                         if (wg_fp64_less(d3, 0.8lf)) f = F_0_2;
                     }
                 }
                 if (y > 80) {
-                    uint f1 = wg_fp64_to_fp32(wg_fp64_mul(simplexOctaves(sh(25), wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(x), 0.125f)), wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(z), 0.125f))), 8.0lf));
-                    uint t = wg_fp32_mul(wg_fp32_sub(wg_fp32_add(f1, wg_fp32_from_int(y)), 80.0f), F_0_05);
-                    return wg_fp32_sub(f, jdivf(t, 40.0f));
+                    uint f1 = wg_fp64_to_fp32(wgx_fp64_mul(simplexOctaves(sh(25), wg_fp64_from_fp32(wgx_fp32_mul(wg_fp32_from_int(x), 0.125f)), wg_fp64_from_fp32(wgx_fp32_mul(wg_fp32_from_int(z), 0.125f))), 8.0lf));
+                    uint t = wgx_fp32_mul(wgx_fp32_sub(wgx_fp32_add(f1, wg_fp32_from_int(y)), 80.0f), F_0_05);
+                    return wgx_fp32_sub(f, jdivf(t, 40.0f));
                 }
                 return f;
             }"""),
         ieee("precise double d0 = normalNoise(sh(9), double(gX), 0.0lf, double(gZ));", "uvec2 d0 = normalNoise(sh(9), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ));"),
-        ieee("return jd2i(d0 * 2.75lf + 3.0lf + rngNextDouble(r) * 0.25lf);", "return jd2i(wg_fp64_add(wg_fp64_add(wg_fp64_mul(d0, 2.75lf), 3.0lf), wg_fp64_mul(rngNextDouble(r), 0.25lf)));"),
+        ieee("return jd2i(d0 * 2.75lf + 3.0lf + rngNextDouble(r) * 0.25lf);", "return jd2i(wgx_fp64_add(wgx_fp64_add(wgx_fp64_mul(d0, 2.75lf), 3.0lf), wgx_fp64_mul(rngNextDouble(r), 0.25lf)));"),
         ieee("double surfaceSecondary() {", "uvec2 surfaceSecondary() {"),
         ieee("cSecondary = normalNoise(sh(10), double(gX), 0.0lf, double(gZ));", "cSecondary = normalNoise(sh(10), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ));"),
-        ieee("precise double fx = double(float(gX & 15) * 0.0625);", "uvec2 fx = wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(gX & 15), 0.0625f));"),
-        ieee("precise double fz = double(float(gZ & 15) * 0.0625);", "uvec2 fz = wg_fp64_from_fp32(wg_fp32_mul(wg_fp32_from_int(gZ & 15), 0.0625f));"),
+        ieee("precise double fx = double(float(gX & 15) * 0.0625);", "uvec2 fx = wg_fp64_from_fp32(wgx_fp32_mul(wg_fp32_from_int(gX & 15), 0.0625f));"),
+        ieee("precise double fz = double(float(gZ & 15) * 0.0625);", "uvec2 fz = wg_fp64_from_fp32(wgx_fp32_mul(wg_fp32_from_int(gZ & 15), 0.0625f));"),
         ieee("precise double a = lerpd(fx, double(prelimCorner(0, 0)), double(prelimCorner(1, 0)));", "uvec2 a = lerpd(fx, wg_fp64_from_int(prelimCorner(0, 0)), wg_fp64_from_int(prelimCorner(1, 0)));"),
         ieee("precise double b = lerpd(fx, double(prelimCorner(0, 1)), double(prelimCorner(1, 1)));", "uvec2 b = lerpd(fx, wg_fp64_from_int(prelimCorner(0, 1)), wg_fp64_from_int(prelimCorner(1, 1)));"),
         ieee("""
@@ -716,21 +716,21 @@ final class FusedSurfaceKernels {
             }"""),
         ieee("precise double d0 = mapd(double(cY), double(trueAtAndBelow), double(falseAtAndAbove), 1.0lf, 0.0lf);", "uvec2 d0 = mapd(wg_fp64_from_int(cY), wg_fp64_from_int(trueAtAndBelow), wg_fp64_from_int(falseAtAndAbove), 1.0lf, 0.0lf);"),
         ieee("return double(rngNextFloat(r)) < d0;", "return wg_fp64_less(wg_fp64_from_fp32(rngNextFloat(r)), d0);"),
-        ieee("precise double v = normalNoise(sh(11), double(gX), 0.0lf, double(gZ)) * 4.0lf;", "uvec2 v = wg_fp64_mul(normalNoise(sh(11), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 4.0lf);"),
+        ieee("precise double v = normalNoise(sh(11), double(gX), 0.0lf, double(gZ)) * 4.0lf;", "uvec2 v = wgx_fp64_mul(normalNoise(sh(11), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 4.0lf);"),
         ieee("precise double fl = floor(v);", "uvec2 fl = wg_fp64_floor(v);"),
-        ieee("cBand = jd2i((v - fl) >= 0.5lf ? fl + 1.0lf : fl);", "cBand = jd2i(wg_fp64_less_equal(0.5lf, wg_fp64_sub(v, fl)) ? wg_fp64_add(fl, 1.0lf) : fl);"),
+        ieee("cBand = jd2i((v - fl) >= 0.5lf ? fl + 1.0lf : fl);", "cBand = jd2i(wg_fp64_less_equal(0.5lf, wgx_fp64_sub(v, fl)) ? wgx_fp64_add(fl, 1.0lf) : fl);"),
         ieee("case 8: r = !(biomeTemperature(blockBiome(), gX, cY, gZ) >= F_0_15); break;", "case 8: r = !wg_fp32_less_equal(F_0_15, biomeTemperature(blockBiome(), gX, cY, gZ)); break;"),
         ieee("int k = c == 0 ? 0 : jd2i(mapd(surfaceSecondary(), -1.0lf, 1.0lf, 0.0lf, double(c)));", "int k = c == 0 ? 0 : jd2i(mapd(surfaceSecondary(), -1.0lf, 1.0lf, 0.0lf, wg_fp64_from_int(c)));"),
         ieee("""
             precise double d1 = jmin(abs(normalNoise(sh(17), double(gX), 0.0lf, double(gZ)) * 8.25lf),
                         normalNoise(sh(15), double(gX) * 1.28lf, 0.0lf, double(gZ) * 1.28lf) * 15.0lf);""",
              """
-            uvec2 d1 = jmin(wg_fp64_abs(wg_fp64_mul(normalNoise(sh(17), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
-                        wg_fp64_mul(normalNoise(sh(15), wg_fp64_mul(wg_fp64_from_int(gX), 1.28lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 1.28lf)), 15.0lf));"""),
+            uvec2 d1 = jmin(wg_fp64_abs(wgx_fp64_mul(normalNoise(sh(17), wg_fp64_from_int(gX), 0.0lf, wg_fp64_from_int(gZ)), 8.25lf)),
+                        wgx_fp64_mul(normalNoise(sh(15), wgx_fp64_mul(wg_fp64_from_int(gX), 1.28lf), 0.0lf, wgx_fp64_mul(wg_fp64_from_int(gZ), 1.28lf)), 15.0lf));"""),
         ieee("if (!(d1 <= 1.8lf)) {", "if (!wg_fp64_less_equal(d1, 1.8lf)) {"),
-        ieee("precise double d5 = abs(normalNoise(sh(16), double(gX) * 1.17lf, 0.0lf, double(gZ) * 1.17lf) * 1.5lf);", "uvec2 d5 = wg_fp64_abs(wg_fp64_mul(normalNoise(sh(16), wg_fp64_mul(wg_fp64_from_int(gX), 1.17lf), 0.0lf, wg_fp64_mul(wg_fp64_from_int(gZ), 1.17lf)), 1.5lf));"),
-        ieee("precise double d6 = jmin(d1 * d1 * 1.2lf, ceil(d5 * 40.0lf) + 14.0lf);", "uvec2 d6 = jmin(wg_fp64_mul(wg_fp64_mul(d1, d1), 1.2lf), wg_fp64_add(wgf_fp64_ceil(wg_fp64_mul(d5, 40.0lf)), 14.0lf));"),
-        ieee("if (biomeTemperature(biome, gX, 63, gZ) > F_0_1) d6 -= 2.0lf;", "if (wg_fp32_less(F_0_1, biomeTemperature(biome, gX, 63, gZ))) d6 = wg_fp64_sub(d6, 2.0lf);"),
+        ieee("precise double d5 = abs(normalNoise(sh(16), double(gX) * 1.17lf, 0.0lf, double(gZ) * 1.17lf) * 1.5lf);", "uvec2 d5 = wg_fp64_abs(wgx_fp64_mul(normalNoise(sh(16), wgx_fp64_mul(wg_fp64_from_int(gX), 1.17lf), 0.0lf, wgx_fp64_mul(wg_fp64_from_int(gZ), 1.17lf)), 1.5lf));"),
+        ieee("precise double d6 = jmin(d1 * d1 * 1.2lf, ceil(d5 * 40.0lf) + 14.0lf);", "uvec2 d6 = jmin(wgx_fp64_mul(wgx_fp64_mul(d1, d1), 1.2lf), wgx_fp64_add(wgf_fp64_ceil(wgx_fp64_mul(d5, 40.0lf)), 14.0lf));"),
+        ieee("if (biomeTemperature(biome, gX, 63, gZ) > F_0_1) d6 -= 2.0lf;", "if (wg_fp32_less(F_0_1, biomeTemperature(biome, gX, 63, gZ))) d6 = wgx_fp64_sub(d6, 2.0lf);"),
         ieee("precise double d2;", "uvec2 d2;"),
         ieee("""
             if (d6 > 2.0lf) {
@@ -741,8 +741,8 @@ final class FusedSurfaceKernels {
                         d2 = 0.0lf;""",
              """
             if (wg_fp64_less(2.0lf, d6)) {
-                        d2 = wg_fp64_sub(wg_fp64_sub(wg_fp64_from_int(SEA_LEVEL), d6), 7.0lf);
-                        d6 = wg_fp64_add(d6, wg_fp64_from_int(SEA_LEVEL));
+                        d2 = wgx_fp64_sub(wgx_fp64_sub(wg_fp64_from_int(SEA_LEVEL), d6), 7.0lf);
+                        d6 = wgx_fp64_add(d6, wg_fp64_from_int(SEA_LEVEL));
                     } else {
                         d6 = 0.0lf;
                         d2 = 0.0lf;"""),
