@@ -16,14 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MetalKernelSourceTest {
     /**
      * The SPIR-V of one emulated kernel (K_HEIGHT of a fixture router, which calls no helper) and the Metal
-     * source MoltenVK 1.4.2 made of it, both from MoltenVK's MVK_CONFIG_SHADER_DUMP_DIR on an Apple M3.  The
+     * source MoltenVK 1.4.2 made of it without argument buffers, both from MoltenVK's MVK_CONFIG_SHADER_DUMP_DIR on
+     * an Apple M3 (MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0).  The
      * conversion here has to give the same text, resource layout included, or MoltenVK would bind the wrong
      * buffers to a kernel handed over as Metal source.
      */
     @Test
     void aKernelWithoutHelpersIsWhatMoltenVkMakesOfItCharacterForCharacter() throws IOException {
-        byte[] spirv = resource("moltenvk-1.4.2-k_height.spv");
-        String moltenVk = new String(resource("moltenvk-1.4.2-k_height.metal"), StandardCharsets.UTF_8);
+        byte[] spirv = resource("moltenvk-1.4.2-k_height-direct.spv");
+        String moltenVk = new String(resource("moltenvk-1.4.2-k_height-direct.metal"), StandardCharsets.UTF_8);
         assertEquals(moltenVk, MetalKernelSource.msl(spirv));
     }
 
@@ -34,7 +35,7 @@ class MetalKernelSourceTest {
 
     @Test
     void theModuleIsTheMarkerFollowedByTheTerminatedSourceInWholeWords() throws IOException {
-        byte[] spirv = resource("moltenvk-1.4.2-k_height.spv");
+        byte[] spirv = resource("moltenvk-1.4.2-k_height-direct.spv");
         byte[] code = MetalKernelSource.moduleCode(spirv);
         assertEquals(0, code.length % 4);
         assertEquals(MetalKernelSource.MSL_SOURCE_MAGIC, ByteBuffer.wrap(code).order(ByteOrder.LITTLE_ENDIAN).getInt(0));
@@ -42,41 +43,6 @@ class MetalKernelSourceTest {
         int end = text.indexOf('\0');
         assertEquals(MetalKernelSource.msl(spirv), text.substring(0, end));
         assertTrue(text.substring(end).chars().allMatch(c -> c == 0), "only NUL padding after the source");
-    }
-
-    @Test
-    void everyArgumentIndexUpToTheLastUsedOneGetsAMember() {
-        String unpadded = """
-                struct spvDescriptorSetBuffer0
-                {
-                    device Chunks* m_63 [[id(1)]];
-                    device Output* m_89 [[id(7)]];
-                    device Perm* m_127 [[id(2)]];
-                };
-                """;
-        String padded = """
-                struct spvDescriptorSetBuffer0
-                {
-                    constant void* _m0_pad [[id(0)]];
-                    device Chunks* m_63 [[id(1)]];
-                    device Perm* m_127 [[id(2)]];
-                    constant void* _m3_pad [[id(3)]];
-                    constant void* _m4_pad [[id(4)]];
-                    constant void* _m5_pad [[id(5)]];
-                    constant void* _m6_pad [[id(6)]];
-                    device Output* m_89 [[id(7)]];
-                };
-                """;
-        assertEquals(padded, MetalKernelSource.padArgumentBuffer(unpadded));
-        assertEquals("kernel void main0() {}", MetalKernelSource.padArgumentBuffer("kernel void main0() {}"));
-    }
-
-    @Test
-    void anArgumentBufferThatCannotBeLaidOutFailsInsteadOfBindingTheWrongBuffer() {
-        String twice = "struct spvDescriptorSetBuffer0\n{\n    device A* a [[id(1)]];\n    device B* b [[id(1)]];\n};";
-        assertThrows(IllegalStateException.class, () -> MetalKernelSource.padArgumentBuffer(twice));
-        String unnumbered = "struct spvDescriptorSetBuffer0\n{\n    device A* a;\n};";
-        assertThrows(IllegalStateException.class, () -> MetalKernelSource.padArgumentBuffer(unnumbered));
     }
 
     @Test

@@ -209,10 +209,19 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var app = VkApplicationInfo.calloc(stack).sType$Default()
                     .pApplicationName(stack.UTF8("Tellurium")).apiVersion(VK12.VK_API_VERSION_1_2);
-            var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack);
+            var offered = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionNames(stack);
+            var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack, offered);
             var instanceInfo = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(app)
                     .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
                     .ppEnabledExtensionNames(portabilityInstance);
+            if (offered.contains(dev.tellurium.runtime.vulkan.VulkanPortability.LAYER_SETTINGS_EXTENSION)) {
+                // MoltenVK: no Metal argument buffers in this instance, the layout MetalKernelSource writes for.
+                var extensions = stack.mallocPointer((portabilityInstance == null ? 0 : portabilityInstance.remaining()) + 1);
+                if (portabilityInstance != null) extensions.put(portabilityInstance);
+                extensions.put(stack.UTF8(dev.tellurium.runtime.vulkan.VulkanPortability.LAYER_SETTINGS_EXTENSION)).flip();
+                instanceInfo.ppEnabledExtensionNames(extensions)
+                        .pNext(dev.tellurium.runtime.vulkan.VulkanPortability.moltenVkSetting(stack, MetalKernelSource.ARGUMENT_BUFFERS_SETTING, 0));
+            }
             PointerBuffer pointer = stack.mallocPointer(1);
             check(vkCreateInstance(instanceInfo, null, pointer), "vkCreateInstance");
             VkInstance instance = new VkInstance(pointer.get(0), instanceInfo);
@@ -690,7 +699,10 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[kernel]);
                 long groups = (threads + 63) / 64;
                 if (groups > 65535L * 65535L) throw new IllegalStateException("Dispatch too large");
-                vkCmdDispatch(commands, (int) groups, 1, 1);
+                // A Metal-source module carries no SPIR-V for MoltenVK to read local_size_x = 64 from, so MoltenVK runs
+                // it with one thread per threadgroup: dispatch one group per invocation.  Correct (the kernels use only
+                // gl_GlobalInvocationID), but it leaves 31 of every 32 SIMD lanes idle.
+                vkCmdDispatch(commands, (int) (metalSource ? groups * 64 : groups), 1, 1);
                 var barrier = VkMemoryBarrier.calloc(1, stack).sType$Default()
                         .srcAccessMask(VK_ACCESS_SHADER_WRITE_BIT).dstAccessMask(VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
                 vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,

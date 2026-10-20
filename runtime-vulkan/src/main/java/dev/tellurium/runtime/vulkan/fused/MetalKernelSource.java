@@ -5,7 +5,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.lwjgl.PointerBuffer;
@@ -28,21 +27,22 @@ import static org.lwjgl.util.spvc.Spvc.*;
  * kernel without helpers the text is what MoltenVK generates itself, character for character.</p>
  *
  * <p>The resource layout copies MoltenVK 1.4's for one descriptor set of {@link FusedNoiseDevice#BINDINGS}
- * storage buffers and 8 bytes of push constants: a Metal argument buffer at buffer index 0 in which binding
- * {@code n} is at argument index {@code n + 1}, every index up to the last one used present (padded), and the
- * push constants at buffer index 8.</p>
+ * storage buffers and 8 bytes of push constants without Metal argument buffers: the push constants at buffer
+ * index 0 and binding {@code n} at buffer index {@code n + 1}, each buffer bound directly.  The device's
+ * instance turns MoltenVK's argument buffers off for this ({@link #ARGUMENT_BUFFERS_SETTING}): a kernel handed
+ * over as Metal source carries no reflection data, and through an argument buffer MoltenVK then never made the
+ * kernel's buffers resident, so every kernel read zeros and wrote nothing (seen on an Apple M3).</p>
  */
 final class MetalKernelSource {
     /** MoltenVK's marker for a shader module whose code is Metal source text instead of SPIR-V. */
     static final int MSL_SOURCE_MAGIC = 0x19960412;
     /** SPIRV-Cross names the entry point main0 ("main" is not a legal Metal function name). */
     static final String ENTRY_POINT = "main0";
-    static final int PUSH_CONSTANT_BUFFER_INDEX = 8;
+    static final int PUSH_CONSTANT_BUFFER_INDEX = 0;
+    /** The MoltenVK setting (VK_EXT_layer_settings, layer "MoltenVK") that this layout needs at 0: never. */
+    static final String ARGUMENT_BUFFERS_SETTING = "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS";
     private static final int MSL_VERSION = 30100;
     private static final int EXECUTION_MODEL_GL_COMPUTE = 5;
-    private static final int ARGUMENT_BUFFERS_TIER_2 = 1;
-    private static final Pattern ARGUMENT_BUFFER = Pattern.compile("(?s)struct spvDescriptorSetBuffer0\\n\\{\\n(.*?)\\n\\};");
-    private static final Pattern ARGUMENT_INDEX = Pattern.compile("\\[\\[id\\((\\d+)\\)\\]\\]");
     private static final Pattern INLINED_HELPER = Pattern.compile("static inline __attribute__\\(\\(always_inline\\)\\)\\n(\\S+ wgf?_)");
 
     private MetalKernelSource() {}
@@ -77,7 +77,7 @@ final class MetalKernelSource {
 
     /** The kernel as MoltenVK would write it in Metal, with the integer helpers left as calls. */
     static String msl(byte[] spirv) {
-        return callHelpers(padArgumentBuffer(convert(spirv)));
+        return callHelpers(convert(spirv));
     }
 
     private static String convert(byte[] spirv) {
@@ -97,8 +97,7 @@ final class MetalKernelSource {
             long options = out.get(0);
             check(spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION, MSL_VERSION), "MSL version");
             check(spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_MACOS), "platform");
-            check(spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, true), "argument buffers");
-            check(spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS_TIER, ARGUMENT_BUFFERS_TIER_2), "tier");
+            check(spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, false), "argument buffers");
             check(spvc_compiler_install_compiler_options(compiler, options), "install options");
             for (int binding = 0; binding < FusedNoiseDevice.BINDINGS; binding++) {
                 add(compiler, stack, 0, binding, binding + 1);
@@ -117,29 +116,6 @@ final class MetalKernelSource {
         spvc_msl_resource_binding_init(resource);
         resource.stage(EXECUTION_MODEL_GL_COMPUTE).desc_set(set).binding(binding).msl_buffer(index);
         check(spvc_compiler_msl_add_resource_binding(compiler, resource), "resource binding " + set + "/" + binding);
-    }
-
-    /**
-     * MoltenVK writes each descriptor's address at its argument index, so every index up to the last one the
-     * kernel uses needs a member, as SPIRV-Cross's own padding option (not in this binding) would give.
-     */
-    static String padArgumentBuffer(String msl) {
-        Matcher struct = ARGUMENT_BUFFER.matcher(msl);
-        if (!struct.find()) return msl;
-        var members = new TreeMap<Integer, String>();
-        for (String line : struct.group(1).split("\n")) {
-            Matcher index = ARGUMENT_INDEX.matcher(line);
-            if (!index.find()) throw new IllegalStateException("Argument buffer member without an index: " + line.trim());
-            if (members.put(Integer.parseInt(index.group(1)), line) != null) {
-                throw new IllegalStateException("Two argument buffer members at index " + index.group(1));
-            }
-        }
-        var body = new StringBuilder();
-        for (int i = 0; i <= members.lastKey(); i++) {
-            if (i > 0) body.append('\n');
-            body.append(members.getOrDefault(i, "    constant void* _m" + i + "_pad [[id(" + i + ")]];"));
-        }
-        return msl.substring(0, struct.start(1)) + body + msl.substring(struct.end(1));
     }
 
     /** The integer IEEE helpers become real calls; everything else keeps SPIRV-Cross's forced inlining. */

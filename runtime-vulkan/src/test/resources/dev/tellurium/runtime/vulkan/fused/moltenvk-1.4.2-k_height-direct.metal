@@ -152,24 +152,9 @@ struct SurfTmp
     int surfTmp[1];
 };
 
-struct spvDescriptorSetBuffer0
-{
-    constant void* _m0_pad [[id(0)]];
-    device Chunks* m_63 [[id(1)]];
-    device Perm* m_127 [[id(2)]];
-    constant void* _m3_pad [[id(3)]];
-    constant void* _m4_pad [[id(4)]];
-    constant void* _m5_pad [[id(5)]];
-    constant void* _m6_pad [[id(6)]];
-    device Output* m_89 [[id(7)]];
-    constant void* _m8_pad [[id(8)]];
-    constant void* _m9_pad [[id(9)]];
-    device Heights* m_183 [[id(10)]];
-};
-
 constant spvUnsafeArray<int, 10> _143 = spvUnsafeArray<int, 10>({ 0, 6, 5, 5, 6, 6, 6, 6, 6, 6 });
 
-kernel void main0(constant spvDescriptorSetBuffer0& spvDescriptorSet0 [[buffer(0)]], constant Push& pc [[buffer(8)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
+kernel void main0(constant Push& pc [[buffer(0)]], device Chunks& _63 [[buffer(1)]], device Perm& _127 [[buffer(2)]], device Output& _89 [[buffer(7)]], device Heights& _183 [[buffer(10)]], uint3 gl_GlobalInvocationID [[thread_position_in_grid]])
 {
     bool gBailed = false;
     bool gShared = false;
@@ -192,7 +177,7 @@ kernel void main0(constant spvDescriptorSetBuffer0& spvDescriptorSet0 [[buffer(0
     int surface = -64;
     bool haveOcean = false;
     bool haveSurface = false;
-    int surf = (*spvDescriptorSet0.m_63).chunks[slot].pad0;
+    int surf = _63.chunks[slot].pad0;
     int _121;
     int ly = 383;
     for (;;)
@@ -209,11 +194,11 @@ kernel void main0(constant spvDescriptorSetBuffer0& spvDescriptorSet0 [[buffer(0
         }
         if (_84)
         {
-            uint word = (*spvDescriptorSet0.m_89).blocks[(slot * per) + uint(((ly * 64) + (lz * 4)) + (lx / 4))];
+            uint word = _89.blocks[(slot * per) + uint(((ly * 64) + (lz * 4)) + (lx / 4))];
             int state = int((word >> uint(8 * spvSMod(lx, 4))) & 127u);
             if (surf != 0)
             {
-                _121 = int((*spvDescriptorSet0.m_127).perm[int((*spvDescriptorSet0.m_127).perm[surf + 1]) + state]);
+                _121 = int(_127.perm[int(_127.perm[surf + 1]) + state]);
             }
             else
             {
@@ -258,7 +243,7 @@ kernel void main0(constant spvDescriptorSetBuffer0& spvDescriptorSet0 [[buffer(0
             break;
         }
     }
-    (*spvDescriptorSet0.m_183).heights[((slot * 2u) * 256u) + uint(col)] = ocean;
-    (*spvDescriptorSet0.m_183).heights[(((slot * 2u) + 1u) * 256u) + uint(col)] = surface;
+    _183.heights[((slot * 2u) * 256u) + uint(col)] = ocean;
+    _183.heights[(((slot * 2u) + 1u) * 256u) + uint(col)] = surface;
 }
 
