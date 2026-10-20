@@ -454,7 +454,13 @@ final class FusedKernels {
 
         // ------------------------------------------------------- Beardifier
         uvec2 buryContribution(uvec2 x, uvec2 y, uvec2 z) {
-            uvec2 d = jsqrt(wgx_fp64_add(wgx_fp64_add(wgx_fp64_mul(x, x), wgx_fp64_mul(y, y)), wgx_fp64_mul(z, z)));
+            uvec2 s = wgx_fp64_add(wgx_fp64_add(wgx_fp64_mul(x, x), wgx_fp64_mul(y, y)), wgx_fp64_mul(z, z));
+            // From 6 blocks away the result is +0.0 without the root and the division: sqrt(s) >= 6 (a correctly
+            // rounded root is monotonic and sqrt(36) is 6), so clampedMap's t = d / 6 >= 1 and clampedLerp gives b
+            // = 0.0, or lerp(1, 1, 0) = +0.0 at t = 1.  s comes from block offsets, so it is finite and far below
+            // what the root's or the division's guards bail on; a NaN fails the test and takes the full path.
+            if (wg_fp64_less_equal(36.0lf, s)) return 0.0lf;
+            uvec2 d = jsqrt(s);
             return clampedMap(d, 0.0lf, 6.0lf, 1.0lf, 0.0lf);
         }
         uvec2 fastInvSqrt(uvec2 x) {
