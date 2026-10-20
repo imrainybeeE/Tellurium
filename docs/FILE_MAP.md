@@ -4,7 +4,7 @@ Generated from the files on disk by `python scripts/update-file-map.py`.
 
 This inventory excludes Git state, build output, dependency caches and development worlds. It does not treat a planned file as implemented. See [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md) for future files and [STATUS.md](STATUS.md) for observed validation.
 
-Indexed project files: **689**, plus this generated index.
+Indexed project files: **741**, plus this generated index.
 
 ## semantic-core
 
@@ -17,12 +17,15 @@ Immutable semantic language and independent reference evaluation.
 | [semantic-core/src/main/java/dev/tellurium/semantic/CompiledDensity.java](../semantic-core/src/main/java/dev/tellurium/semantic/CompiledDensity.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/DensityEvaluator.java](../semantic-core/src/main/java/dev/tellurium/semantic/DensityEvaluator.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/DensityExpression.java](../semantic-core/src/main/java/dev/tellurium/semantic/DensityExpression.java) | Implementation or explicit public contract |
+| [semantic-core/src/main/java/dev/tellurium/semantic/ExpressionIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/ExpressionIdentity.java) | Implementation or explicit public contract |
+| [semantic-core/src/main/java/dev/tellurium/semantic/ExpressionValidation.java](../semantic-core/src/main/java/dev/tellurium/semantic/ExpressionValidation.java) | Implementation or explicit public contract |
+| [semantic-core/src/main/java/dev/tellurium/semantic/ReferenceInterpreter.java](../semantic-core/src/main/java/dev/tellurium/semantic/ReferenceInterpreter.java) | Implementation or explicit public contract |
+| [semantic-core/src/main/java/dev/tellurium/semantic/SamplePoint.java](../semantic-core/src/main/java/dev/tellurium/semantic/SamplePoint.java) | Implementation or explicit public contract |
+| [semantic-core/src/main/java/dev/tellurium/semantic/WorldgenIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/WorldgenIdentity.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/execution/CapabilityDecision.java](../semantic-core/src/main/java/dev/tellurium/semantic/execution/CapabilityDecision.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/execution/ExecutionReceipt.java](../semantic-core/src/main/java/dev/tellurium/semantic/execution/ExecutionReceipt.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/execution/ProgramAbi.java](../semantic-core/src/main/java/dev/tellurium/semantic/execution/ProgramAbi.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/execution/ResultBufferLease.java](../semantic-core/src/main/java/dev/tellurium/semantic/execution/ResultBufferLease.java) | Implementation or explicit public contract |
-| [semantic-core/src/main/java/dev/tellurium/semantic/ExpressionIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/ExpressionIdentity.java) | Implementation or explicit public contract |
-| [semantic-core/src/main/java/dev/tellurium/semantic/ExpressionValidation.java](../semantic-core/src/main/java/dev/tellurium/semantic/ExpressionValidation.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/identity/ContextIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/identity/ContextIdentity.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/identity/DynamicInputIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/identity/DynamicInputIdentity.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/identity/ProgramFingerprint.java](../semantic-core/src/main/java/dev/tellurium/semantic/identity/ProgramFingerprint.java) | Implementation or explicit public contract |
@@ -39,8 +42,6 @@ Immutable semantic language and independent reference evaluation.
 | [semantic-core/src/main/java/dev/tellurium/semantic/program/ProgramNode.java](../semantic-core/src/main/java/dev/tellurium/semantic/program/ProgramNode.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/program/ValueType.java](../semantic-core/src/main/java/dev/tellurium/semantic/program/ValueType.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/program/WorldgenProgram.java](../semantic-core/src/main/java/dev/tellurium/semantic/program/WorldgenProgram.java) | Implementation or explicit public contract |
-| [semantic-core/src/main/java/dev/tellurium/semantic/ReferenceInterpreter.java](../semantic-core/src/main/java/dev/tellurium/semantic/ReferenceInterpreter.java) | Implementation or explicit public contract |
-| [semantic-core/src/main/java/dev/tellurium/semantic/SamplePoint.java](../semantic-core/src/main/java/dev/tellurium/semantic/SamplePoint.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BeardifierSnapshot.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BeardifierSnapshot.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BlendedNoiseParameters.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BlendedNoiseParameters.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BlockStateDescriptor.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/BlockStateDescriptor.java) | Implementation or explicit public contract |
@@ -54,7 +55,6 @@ Immutable semantic language and independent reference evaluation.
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/RegistrySnapshot.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/RegistrySnapshot.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/StructureBlendSnapshot.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/StructureBlendSnapshot.java) | Implementation or explicit public contract |
 | [semantic-core/src/main/java/dev/tellurium/semantic/snapshot/WorldgenSnapshot.java](../semantic-core/src/main/java/dev/tellurium/semantic/snapshot/WorldgenSnapshot.java) | Implementation or explicit public contract |
-| [semantic-core/src/main/java/dev/tellurium/semantic/WorldgenIdentity.java](../semantic-core/src/main/java/dev/tellurium/semantic/WorldgenIdentity.java) | Implementation or explicit public contract |
 | [semantic-core/src/test/java/dev/tellurium/semantic/SemanticContractTest.java](../semantic-core/src/test/java/dev/tellurium/semantic/SemanticContractTest.java) | Executable CPU test |
 | [semantic-core/src/test/java/dev/tellurium/semantic/V02ContractsTest.java](../semantic-core/src/test/java/dev/tellurium/semantic/V02ContractsTest.java) | Executable CPU test |
 | [semantic-core/src/test/java/dev/tellurium/semantic/WorldgenProgramFingerprintTest.java](../semantic-core/src/test/java/dev/tellurium/semantic/WorldgenProgramFingerprintTest.java) | Executable CPU test |
@@ -96,13 +96,17 @@ Vulkan GLSL source generation.
 | File | Role |
 | --- | --- |
 | [compiler-vulkan/README.md](../compiler-vulkan/README.md) | Documentation |
+| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/GlslCompiler.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/GlslCompiler.java) | Implementation or explicit public contract |
+| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FastIeeeHelpers.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FastIeeeHelpers.java) | Implementation or explicit public contract |
+| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedArith.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedArith.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedGpuBackend.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedGpuBackend.java) | Implementation or explicit public contract |
+| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeHelpers.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeHelpers.java) | Implementation or explicit public contract |
+| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibrary.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibrary.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedKernels.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedKernels.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedNoiseCompiler.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedNoiseCompiler.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedSurfaceKernels.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedSurfaceKernels.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedTables.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/FusedTables.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/SurfaceProgram.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/fused/SurfaceProgram.java) | Implementation or explicit public contract |
-| [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/GlslCompiler.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/GlslCompiler.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/AquiferEmitter.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/AquiferEmitter.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierEmitter.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierEmitter.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierKernelInputStage.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierKernelInputStage.java) | Implementation or explicit public contract |
@@ -125,14 +129,13 @@ Vulkan GLSL source generation.
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/StagePlanner.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/StagePlanner.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/WorldgenShaderCompiler.java](../compiler-vulkan/src/main/java/dev/tellurium/compiler/vulkan/worldgen/WorldgenShaderCompiler.java) | Implementation or explicit public contract |
 | [compiler-vulkan/src/main/resources/dev/tellurium/compiler/vulkan/fused/fused_lib.glsl](../compiler-vulkan/src/main/resources/dev/tellurium/compiler/vulkan/fused/fused_lib.glsl) | Packaged metadata/resource |
+| [compiler-vulkan/src/main/resources/dev/tellurium/compiler/vulkan/fused/fused_lib_ieee.glsl](../compiler-vulkan/src/main/resources/dev/tellurium/compiler/vulkan/fused/fused_lib_ieee.glsl) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/ieee/bits32.glsl](../compiler-vulkan/src/main/resources/shaders/ieee/bits32.glsl) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/ieee/bits64.glsl](../compiler-vulkan/src/main/resources/shaders/ieee/bits64.glsl) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/ieee/integer-java.glsl](../compiler-vulkan/src/main/resources/shaders/ieee/integer-java.glsl) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/worldgen/material.comp](../compiler-vulkan/src/main/resources/shaders/worldgen/material.comp) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/worldgen/metadata.comp](../compiler-vulkan/src/main/resources/shaders/worldgen/metadata.comp) | Packaged metadata/resource |
 | [compiler-vulkan/src/main/resources/shaders/worldgen/noise.comp](../compiler-vulkan/src/main/resources/shaders/worldgen/noise.comp) | Packaged metadata/resource |
-| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedKernelsFluidUpdatesTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedKernelsFluidUpdatesTest.java) | Executable CPU test |
-| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/KernelTextIdentityTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/KernelTextIdentityTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/GlslCompilerTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/GlslCompilerTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/IntegerIeeeLimbOrderTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/IntegerIeeeLimbOrderTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/NativeDraftMathTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/NativeDraftMathTest.java) | Executable CPU test |
@@ -140,6 +143,22 @@ Vulkan GLSL source generation.
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/SpirvFunctionControlPatcherTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/SpirvFunctionControlPatcherTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/SpirvNumericContractTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/SpirvNumericContractTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/V02WorldgenShaderTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/V02WorldgenShaderTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeHelpersTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeHelpersTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeModel.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeModel.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeVectors.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FastIeeeVectors.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedArithTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedArithTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedFixtureCoverageTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedFixtureCoverageTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedFixtures.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedFixtures.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeAssemblyTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeAssemblyTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeDialectTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeDialectTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeHelpersTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeHelpersTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryConstantsTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryConstantsTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryDriftTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryDriftTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryTextTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedIeeeLibraryTextTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedKernelsFluidUpdatesTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedKernelsFluidUpdatesTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedLibraryText.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedLibraryText.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedNativeGoldenTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/FusedNativeGoldenTest.java) | Executable CPU test |
+| [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/KernelTextIdentityTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/fused/KernelTextIdentityTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierKernelInputStageTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/BeardifierKernelInputStageTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/SharedBlendedReductionStageEmitterTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/SharedBlendedReductionStageEmitterTest.java) | Executable CPU test |
 | [compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/SharedFp64DivisionStageEmitterTest.java](../compiler-vulkan/src/test/java/dev/tellurium/compiler/vulkan/worldgen/SharedFp64DivisionStageEmitterTest.java) | Executable CPU test |
@@ -152,6 +171,13 @@ Immutable final-state encodings and validation.
 | File | Role |
 | --- | --- |
 | [material-codec/README.md](../material-codec/README.md) | Documentation |
+| [material-codec/src/main/java/dev/tellurium/material/DenseSection.java](../material-codec/src/main/java/dev/tellurium/material/DenseSection.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/LogicalChecksum.java](../material-codec/src/main/java/dev/tellurium/material/LogicalChecksum.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/PaletteSection.java](../material-codec/src/main/java/dev/tellurium/material/PaletteSection.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/SectionCodec.java](../material-codec/src/main/java/dev/tellurium/material/SectionCodec.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/SectionData.java](../material-codec/src/main/java/dev/tellurium/material/SectionData.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/SectionMetadata.java](../material-codec/src/main/java/dev/tellurium/material/SectionMetadata.java) | Implementation or explicit public contract |
+| [material-codec/src/main/java/dev/tellurium/material/UniformSection.java](../material-codec/src/main/java/dev/tellurium/material/UniformSection.java) | Implementation or explicit public contract |
 | [material-codec/src/main/java/dev/tellurium/material/chunk/BlockStateTable.java](../material-codec/src/main/java/dev/tellurium/material/chunk/BlockStateTable.java) | Implementation or explicit public contract |
 | [material-codec/src/main/java/dev/tellurium/material/chunk/ChunkLogicalChecksum.java](../material-codec/src/main/java/dev/tellurium/material/chunk/ChunkLogicalChecksum.java) | Implementation or explicit public contract |
 | [material-codec/src/main/java/dev/tellurium/material/chunk/ChunkMetadataPayload.java](../material-codec/src/main/java/dev/tellurium/material/chunk/ChunkMetadataPayload.java) | Implementation or explicit public contract |
@@ -164,16 +190,9 @@ Immutable final-state encodings and validation.
 | [material-codec/src/main/java/dev/tellurium/material/chunk/PostProcessingPayload.java](../material-codec/src/main/java/dev/tellurium/material/chunk/PostProcessingPayload.java) | Implementation or explicit public contract |
 | [material-codec/src/main/java/dev/tellurium/material/chunk/SectionCounts.java](../material-codec/src/main/java/dev/tellurium/material/chunk/SectionCounts.java) | Implementation or explicit public contract |
 | [material-codec/src/main/java/dev/tellurium/material/chunk/SectionDirectory.java](../material-codec/src/main/java/dev/tellurium/material/chunk/SectionDirectory.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/DenseSection.java](../material-codec/src/main/java/dev/tellurium/material/DenseSection.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/LogicalChecksum.java](../material-codec/src/main/java/dev/tellurium/material/LogicalChecksum.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/PaletteSection.java](../material-codec/src/main/java/dev/tellurium/material/PaletteSection.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/SectionCodec.java](../material-codec/src/main/java/dev/tellurium/material/SectionCodec.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/SectionData.java](../material-codec/src/main/java/dev/tellurium/material/SectionData.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/SectionMetadata.java](../material-codec/src/main/java/dev/tellurium/material/SectionMetadata.java) | Implementation or explicit public contract |
-| [material-codec/src/main/java/dev/tellurium/material/UniformSection.java](../material-codec/src/main/java/dev/tellurium/material/UniformSection.java) | Implementation or explicit public contract |
-| [material-codec/src/test/java/dev/tellurium/material/chunk/ChunkResultValidatorTest.java](../material-codec/src/test/java/dev/tellurium/material/chunk/ChunkResultValidatorTest.java) | Executable CPU test |
 | [material-codec/src/test/java/dev/tellurium/material/SectionCodecTest.java](../material-codec/src/test/java/dev/tellurium/material/SectionCodecTest.java) | Executable CPU test |
 | [material-codec/src/test/java/dev/tellurium/material/V02ChunkResultTest.java](../material-codec/src/test/java/dev/tellurium/material/V02ChunkResultTest.java) | Executable CPU test |
+| [material-codec/src/test/java/dev/tellurium/material/chunk/ChunkResultValidatorTest.java](../material-codec/src/test/java/dev/tellurium/material/chunk/ChunkResultValidatorTest.java) | Executable CPU test |
 
 ## spatial-data
 
@@ -203,8 +222,8 @@ Tile identities, bounded bytes and shared ownership.
 | [spatial-data/src/main/java/dev/tellurium/spatial/worldgen/UncachedSampleStore.java](../spatial-data/src/main/java/dev/tellurium/spatial/worldgen/UncachedSampleStore.java) | Implementation or explicit public contract |
 | [spatial-data/src/test/java/dev/tellurium/spatial/ByteBudgetTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/ByteBudgetTest.java) | Executable CPU test |
 | [spatial-data/src/test/java/dev/tellurium/spatial/SharedTileCacheTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/SharedTileCacheTest.java) | Executable CPU test |
-| [spatial-data/src/test/java/dev/tellurium/spatial/TiledConsumerOwnershipTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/TiledConsumerOwnershipTest.java) | Executable CPU test |
 | [spatial-data/src/test/java/dev/tellurium/spatial/TileKeyTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/TileKeyTest.java) | Executable CPU test |
+| [spatial-data/src/test/java/dev/tellurium/spatial/TiledConsumerOwnershipTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/TiledConsumerOwnershipTest.java) | Executable CPU test |
 | [spatial-data/src/test/java/dev/tellurium/spatial/V02SpatialStoreTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/V02SpatialStoreTest.java) | Executable CPU test |
 | [spatial-data/src/test/java/dev/tellurium/spatial/V02TiledConsumerTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/V02TiledConsumerTest.java) | Executable CPU test |
 | [spatial-data/src/test/java/dev/tellurium/spatial/V02TypedProducerTest.java](../spatial-data/src/test/java/dev/tellurium/spatial/V02TypedProducerTest.java) | Executable CPU test |
@@ -248,6 +267,8 @@ Bounded coordinator, routing and commit models.
 | [chunk-engine/src/test/java/dev/tellurium/engine/CoordinatorSnapshotTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/CoordinatorSnapshotTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/EpochTaskEngineTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/EpochTaskEngineTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/RoutingPolicyTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/RoutingPolicyTest.java) | Executable CPU test |
+| [chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorCampaign.java](../chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorCampaign.java) | Executable CPU test |
+| [chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/CommitCoordinatorTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/CommitCoordinatorTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/CommitReceiptProvenanceTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/CommitReceiptProvenanceTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/FixedBatchBuilderTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/FixedBatchBuilderTest.java) | Executable CPU test |
@@ -255,8 +276,6 @@ Bounded coordinator, routing and commit models.
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/SpatialWorkServiceTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/SpatialWorkServiceTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/WorkCountersTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/WorkCountersTest.java) | Executable CPU test |
 | [chunk-engine/src/test/java/dev/tellurium/engine/worldgen/WorkRecordTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/worldgen/WorkRecordTest.java) | Executable CPU test |
-| [chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorCampaign.java](../chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorCampaign.java) | Executable CPU test |
-| [chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorTest.java](../chunk-engine/src/test/java/dev/tellurium/engine/WorldgenCoordinatorTest.java) | Executable CPU test |
 
 ## frontend-mc1211
 
@@ -287,25 +306,36 @@ Persistent Vulkan lifecycle and opt-in native compute.
 
 | File | Role |
 | --- | --- |
-| [runtime-vulkan/build.gradle](../runtime-vulkan/build.gradle) | Build configuration/tooling |
 | [runtime-vulkan/README.md](../runtime-vulkan/README.md) | Documentation |
+| [runtime-vulkan/build.gradle](../runtime-vulkan/build.gradle) | Build configuration/tooling |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/DeviceCapabilities.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/DeviceCapabilities.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/Fp64Profile.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/Fp64Profile.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedCompileProbe.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedCompileProbe.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDevice.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDevice.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/GpuSmokeResult.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/GpuSmokeResult.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/Hashes.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/Hashes.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeBeardifierSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeBeardifierSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeBlendedReductionSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeBlendedReductionSmoke.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeDeviceProbe.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeDeviceProbe.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerFloorSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerFloorSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeCompile.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeCompile.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeRunner.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeRunner.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeThroughput.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeIntegerIeeeThroughput.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeRangeChoiceSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeRangeChoiceSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeRawChainSuffixSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeRawChainSuffixSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeSharedFp64DivisionSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeSharedFp64DivisionSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeSingleKnotSplineSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeSingleKnotSplineSmoke.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeVulkanLifecycleRunner.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeVulkanLifecycleRunner.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeWorldgenSmoke.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/NativeWorldgenSmoke.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/ShadercCompiler.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/ShadercCompiler.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeConfig.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeConfig.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeWorkBudget.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeWorkBudget.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanPortability.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanPortability.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanSmokeRunner.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanSmokeRunner.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedCompileProbe.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedCompileProbe.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedDispatchPlan.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedDispatchPlan.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaign.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaign.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedLibReference.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedLibReference.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDevice.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDevice.java) | Implementation or explicit public contract |
+| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/MetalKernelSource.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/fused/MetalKernelSource.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/BufferLayout.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/BufferLayout.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/CapabilityQualifier.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/CapabilityQualifier.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/ChainStoragePlan.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/ChainStoragePlan.java) | Implementation or explicit public contract |
@@ -332,20 +362,39 @@ Persistent Vulkan lifecycle and opt-in native compute.
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanContext.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanContext.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanGenerationService.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanGenerationService.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanWorldgenExecutor.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/production/VulkanWorldgenExecutor.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/ShadercCompiler.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/ShadercCompiler.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeConfig.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeConfig.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeWorkBudget.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/SmokeWorkBudget.java) | Implementation or explicit public contract |
-| [runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanSmokeRunner.java](../runtime-vulkan/src/main/java/dev/tellurium/runtime/vulkan/VulkanSmokeRunner.java) | Implementation or explicit public contract |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/DeviceCapabilitiesTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/DeviceCapabilitiesTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/NativeRangeChoiceSmokeTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/NativeRangeChoiceSmokeTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/SmokeWorkBudgetTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/SmokeWorkBudgetTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/V02ProductionTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/V02ProductionTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanPortabilityTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanPortabilityTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanWorldgenExecutorTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanWorldgenExecutorTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedDispatchPlanTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedDispatchPlanTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedIeeeLibraryCompileTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedIeeeLibraryCompileTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaignRunTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaignRunTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaignTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibCampaignTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibReferenceTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedLibReferenceTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDeviceProfileTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/FusedNoiseDeviceProfileTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/MetalKernelSourceTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/fused/MetalKernelSourceTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/ChainStoragePlanTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/ChainStoragePlanTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/PipelineCacheLimitsTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/PipelineCacheLimitsTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/RawRequestOwnershipTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/RawRequestOwnershipTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/ScratchStoragePlanTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/ScratchStoragePlanTest.java) | Executable CPU test |
 | [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/SpirvModuleCacheTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/production/SpirvModuleCacheTest.java) | Executable CPU test |
-| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/SmokeWorkBudgetTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/SmokeWorkBudgetTest.java) | Executable CPU test |
-| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/V02ProductionTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/V02ProductionTest.java) | Executable CPU test |
-| [runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanWorldgenExecutorTest.java](../runtime-vulkan/src/test/java/dev/tellurium/runtime/vulkan/VulkanWorldgenExecutorTest.java) | Executable CPU test |
+| [runtime-vulkan/src/test/resources/dev/tellurium/runtime/vulkan/fused/moltenvk-1.4.2-k_height-direct.metal](../runtime-vulkan/src/test/resources/dev/tellurium/runtime/vulkan/fused/moltenvk-1.4.2-k_height-direct.metal) | Executable CPU test |
+| [runtime-vulkan/src/test/resources/dev/tellurium/runtime/vulkan/fused/moltenvk-1.4.2-k_height-direct.spv](../runtime-vulkan/src/test/resources/dev/tellurium/runtime/vulkan/fused/moltenvk-1.4.2-k_height-direct.spv) | Executable CPU test |
+
+## runtime-metal
+
+Native Metal backend for the emulated kernels on Apple GPUs.
+
+| File | Role |
+| --- | --- |
+| [runtime-metal/build.gradle](../runtime-metal/build.gradle) | Build configuration/tooling |
+| [runtime-metal/src/main/java/dev/tellurium/runtime/metal/MetalFusedDevice.java](../runtime-metal/src/main/java/dev/tellurium/runtime/metal/MetalFusedDevice.java) | Implementation or explicit public contract |
+| [runtime-metal/src/main/java/dev/tellurium/runtime/metal/NativeMetalSmoke.java](../runtime-metal/src/main/java/dev/tellurium/runtime/metal/NativeMetalSmoke.java) | Implementation or explicit public contract |
+| [runtime-metal/src/main/java/dev/tellurium/runtime/metal/ObjC.java](../runtime-metal/src/main/java/dev/tellurium/runtime/metal/ObjC.java) | Implementation or explicit public contract |
+| [runtime-metal/src/test/java/dev/tellurium/runtime/metal/MetalFusedDeviceTest.java](../runtime-metal/src/test/java/dev/tellurium/runtime/metal/MetalFusedDeviceTest.java) | Executable CPU test |
+| [runtime-metal/src/test/java/dev/tellurium/runtime/metal/ObjCTest.java](../runtime-metal/src/test/java/dev/tellurium/runtime/metal/ObjCTest.java) | Executable CPU test |
 
 ## oracle-and-replay
 
@@ -353,9 +402,16 @@ Corpus comparator, counted replay and result artifacts.
 
 | File | Role |
 | --- | --- |
-| [oracle-and-replay/build.gradle](../oracle-and-replay/build.gradle) | Build configuration/tooling |
 | [oracle-and-replay/README.md](../oracle-and-replay/README.md) | Documentation |
+| [oracle-and-replay/build.gradle](../oracle-and-replay/build.gradle) | Build configuration/tooling |
 | [oracle-and-replay/src/corpusApi/java/dev/tellurium/oracle/schema/CorpusApiVersion.java](../oracle-and-replay/src/corpusApi/java/dev/tellurium/oracle/schema/CorpusApiVersion.java) | Tooling, data or provenance |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/FixtureResult.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/FixtureResult.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayCli.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayCli.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayFixture.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayFixture.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayReport.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayReport.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayRunner.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayRunner.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReportJson.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReportJson.java) | Implementation or explicit public contract |
+| [oracle-and-replay/src/main/java/dev/tellurium/oracle/SyntheticCorpus.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/SyntheticCorpus.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReport.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReport.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReportBuilder.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReportBuilder.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReportJson.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/BaselineReportJson.java) | Implementation or explicit public contract |
@@ -367,7 +423,6 @@ Corpus comparator, counted replay and result artifacts.
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/SavedEndpoint.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/SavedEndpoint.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/SavedWorldVerifier.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/SavedWorldVerifier.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/StageTimers.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/benchmark/StageTimers.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/FixtureResult.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/FixtureResult.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/CandidateRun.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/CandidateRun.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ChunkResultSnapshot.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ChunkResultSnapshot.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ChunkSnapshotComparator.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ChunkSnapshotComparator.java) | Implementation or explicit public contract |
@@ -378,26 +433,20 @@ Corpus comparator, counted replay and result artifacts.
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ProcessHarness.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ProcessHarness.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ReferenceRun.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/ReferenceRun.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/RunArtifactManifest.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/minecraft/RunArtifactManifest.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayCli.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayCli.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayFixture.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayFixture.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayReport.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayReport.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayRunner.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReplayRunner.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/ReportJson.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/ReportJson.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/CaptureIdentity.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/CaptureIdentity.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/ChunkSnapshot.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/ChunkSnapshot.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/CorpusManifest.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/CorpusManifest.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/SnapshotField.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/SnapshotField.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/SnapshotIo.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/schema/SnapshotIo.java) | Implementation or explicit public contract |
-| [oracle-and-replay/src/main/java/dev/tellurium/oracle/SyntheticCorpus.java](../oracle-and-replay/src/main/java/dev/tellurium/oracle/SyntheticCorpus.java) | Implementation or explicit public contract |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/BaselineReportTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/BaselineReportTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/EndpointContractTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/EndpointContractTest.java) | Executable CPU test |
-| [oracle-and-replay/src/test/java/dev/tellurium/oracle/minecraft/ProcessHarnessTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/minecraft/ProcessHarnessTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/ReplayCliTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/ReplayCliTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/ReplayRunnerTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/ReplayRunnerTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/ReportJsonTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/ReportJsonTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/SavedChunkReceiptTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/SavedChunkReceiptTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/SavedWorldVerifierTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/SavedWorldVerifierTest.java) | Executable CPU test |
 | [oracle-and-replay/src/test/java/dev/tellurium/oracle/V02OracleTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/V02OracleTest.java) | Executable CPU test |
+| [oracle-and-replay/src/test/java/dev/tellurium/oracle/minecraft/ProcessHarnessTest.java](../oracle-and-replay/src/test/java/dev/tellurium/oracle/minecraft/ProcessHarnessTest.java) | Executable CPU test |
 
 ## mod
 
@@ -405,9 +454,12 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 
 | File | Role |
 | --- | --- |
+| [mod/README.md](../mod/README.md) | Documentation |
 | [mod/common/src/gameTest/java/dev/tellurium/neoforge/gametest/DiagnosticGameTests.java](../mod/common/src/gameTest/java/dev/tellurium/neoforge/gametest/DiagnosticGameTests.java) | Opt-in game bootstrap test/resource |
-| [mod/common/src/gameTest/resources/data/tellurium_test/structure/empty.nbt](../mod/common/src/gameTest/resources/data/tellurium_test/structure/empty.nbt) | Opt-in game bootstrap test/resource |
 | [mod/common/src/gameTest/resources/META-INF/neoforge.mods.toml](../mod/common/src/gameTest/resources/META-INF/neoforge.mods.toml) | Opt-in game bootstrap test/resource |
+| [mod/common/src/gameTest/resources/data/tellurium_test/structure/empty.nbt](../mod/common/src/gameTest/resources/data/tellurium_test/structure/empty.nbt) | Opt-in game bootstrap test/resource |
+| [mod/common/src/main/java/dev/tellurium/neoforge/DiagnosticSelfTest.java](../mod/common/src/main/java/dev/tellurium/neoforge/DiagnosticSelfTest.java) | Implementation or explicit public contract |
+| [mod/common/src/main/java/dev/tellurium/neoforge/TelluriumMod.java](../mod/common/src/main/java/dev/tellurium/neoforge/TelluriumMod.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/bench/ChunkDigest.java](../mod/common/src/main/java/dev/tellurium/neoforge/bench/ChunkDigest.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/bench/ChunkThroughputBenchmark.java](../mod/common/src/main/java/dev/tellurium/neoforge/bench/ChunkThroughputBenchmark.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/bench/PlayerTour.java](../mod/common/src/main/java/dev/tellurium/neoforge/bench/PlayerTour.java) | Implementation or explicit public contract |
@@ -427,7 +479,6 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/java/dev/tellurium/neoforge/config/TelluriumConfig.java](../mod/common/src/main/java/dev/tellurium/neoforge/config/TelluriumConfig.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/config/TelluriumConfigLoader.java](../mod/common/src/main/java/dev/tellurium/neoforge/config/TelluriumConfigLoader.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/config/UserSettings.java](../mod/common/src/main/java/dev/tellurium/neoforge/config/UserSettings.java) | Implementation or explicit public contract |
-| [mod/common/src/main/java/dev/tellurium/neoforge/DiagnosticSelfTest.java](../mod/common/src/main/java/dev/tellurium/neoforge/DiagnosticSelfTest.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/AquiferPrefill.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/AquiferPrefill.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/BaseHeightCache.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/BaseHeightCache.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/CavePlans.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/CavePlans.java) | Implementation or explicit public contract |
@@ -440,6 +491,7 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/FastSurfaceCapture.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/FastSurfaceCapture.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/FastSurfaceState.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/FastSurfaceState.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/ForeignBeardifier.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/ForeignBeardifier.java) | Implementation or explicit public contract |
+| [mod/common/src/main/java/dev/tellurium/neoforge/fast/GpuNumerics.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/GpuNumerics.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/GpuRuntimeLoader.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/GpuRuntimeLoader.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/GraphDump.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/GraphDump.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/fast/GraphStatistics.java](../mod/common/src/main/java/dev/tellurium/neoforge/fast/GraphStatistics.java) | Implementation or explicit public contract |
@@ -449,8 +501,8 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/java/dev/tellurium/neoforge/legacy/StagedRoute.java](../mod/common/src/main/java/dev/tellurium/neoforge/legacy/StagedRoute.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/loader/Names.java](../mod/common/src/main/java/dev/tellurium/neoforge/loader/Names.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/BiomeManagerUniformMixin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/BiomeManagerUniformMixin.java) | Implementation or explicit public contract |
-| [mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockableEventLoopAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockableEventLoopAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockShapeCacheMixin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockShapeCacheMixin.java) | Implementation or explicit public contract |
+| [mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockableEventLoopAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/BlockableEventLoopAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/CarvingContextAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/CarvingContextAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/CaveCarverConfigurationAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/CaveCarverConfigurationAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/CaveWorldCarverPlanMixin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/CaveWorldCarverPlanMixin.java) | Implementation or explicit public contract |
@@ -486,8 +538,8 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/RegionFileStorageAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/RegionFileStorageAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/RegionFileStorageCompressMixin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/RegionFileStorageCompressMixin.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/TelluriumMixinPlugin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/TelluriumMixinPlugin.java) | Implementation or explicit public contract |
-| [mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldgenRandomAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldgenRandomAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldGenRegionChunkCacheMixin.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldGenRegionChunkCacheMixin.java) | Implementation or explicit public contract |
+| [mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldgenRandomAccessor.java](../mod/common/src/main/java/dev/tellurium/neoforge/mixin/WorldgenRandomAccessor.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/pregen/InFlightWindow.java](../mod/common/src/main/java/dev/tellurium/neoforge/pregen/InFlightWindow.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/pregen/Pregenerator.java](../mod/common/src/main/java/dev/tellurium/neoforge/pregen/Pregenerator.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/pregen/TileOrder.java](../mod/common/src/main/java/dev/tellurium/neoforge/pregen/TileOrder.java) | Implementation or explicit public contract |
@@ -530,7 +582,6 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/java/dev/tellurium/neoforge/snapshot/MinecraftSnapshotReader.java](../mod/common/src/main/java/dev/tellurium/neoforge/snapshot/MinecraftSnapshotReader.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/snapshot/RegistrySnapshotReader.java](../mod/common/src/main/java/dev/tellurium/neoforge/snapshot/RegistrySnapshotReader.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/snapshot/StructureBlendReader.java](../mod/common/src/main/java/dev/tellurium/neoforge/snapshot/StructureBlendReader.java) | Implementation or explicit public contract |
-| [mod/common/src/main/java/dev/tellurium/neoforge/TelluriumMod.java](../mod/common/src/main/java/dev/tellurium/neoforge/TelluriumMod.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/threading/AsyncChunkLoad.java](../mod/common/src/main/java/dev/tellurium/neoforge/threading/AsyncChunkLoad.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/threading/AsyncSectionEncoding.java](../mod/common/src/main/java/dev/tellurium/neoforge/threading/AsyncSectionEncoding.java) | Implementation or explicit public contract |
 | [mod/common/src/main/java/dev/tellurium/neoforge/threading/DeferredRegionHeaders.java](../mod/common/src/main/java/dev/tellurium/neoforge/threading/DeferredRegionHeaders.java) | Implementation or explicit public contract |
@@ -546,12 +597,14 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/main/resources/tellurium/fused-qualified.properties](../mod/common/src/main/resources/tellurium/fused-qualified.properties) | Packaged metadata/resource |
 | [mod/common/src/main/resources/tellurium.mixins.json](../mod/common/src/main/resources/tellurium.mixins.json) | Packaged metadata/resource |
 | [mod/common/src/main/resources/tellurium.png](../mod/common/src/main/resources/tellurium.png) | Packaged metadata/resource |
+| [mod/common/src/test/java/dev/tellurium/neoforge/DiagnosticSelfTestTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/DiagnosticSelfTestTest.java) | Executable CPU test |
+| [mod/common/src/test/java/dev/tellurium/neoforge/command/StatusReportTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/command/StatusReportTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/command/TelluriumCommandsTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/command/TelluriumCommandsTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/compat/ChunkSetFileTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/compat/ChunkSetFileTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/compat/TileRingsTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/compat/TileRingsTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/config/TelluriumConfigLoaderTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/config/TelluriumConfigLoaderTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/config/UserSettingsTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/config/UserSettingsTest.java) | Executable CPU test |
-| [mod/common/src/test/java/dev/tellurium/neoforge/DiagnosticSelfTestTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/DiagnosticSelfTestTest.java) | Executable CPU test |
+| [mod/common/src/test/java/dev/tellurium/neoforge/fast/GpuNumericsTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/fast/GpuNumericsTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/pregen/InFlightWindowTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/pregen/InFlightWindowTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/pregen/TileOrderTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/pregen/TileOrderTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/runtime/ChunkMutationJournalTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/runtime/ChunkMutationJournalTest.java) | Executable CPU test |
@@ -566,6 +619,7 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/common/src/test/java/dev/tellurium/neoforge/runtime/QualifiedHookEvidenceTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/runtime/QualifiedHookEvidenceTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/runtime/RuntimeContractTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/runtime/RuntimeContractTest.java) | Executable CPU test |
 | [mod/common/src/test/java/dev/tellurium/neoforge/snapshot/StructureBlendReaderTest.java](../mod/common/src/test/java/dev/tellurium/neoforge/snapshot/StructureBlendReaderTest.java) | Executable CPU test |
+| [mod/fabric-unobfuscated.gradle](../mod/fabric-unobfuscated.gradle) | Build configuration/tooling |
 | [mod/fabric.gradle](../mod/fabric.gradle) | Build configuration/tooling |
 | [mod/gpu-runtime.gradle](../mod/gpu-runtime.gradle) | Build configuration/tooling |
 | [mod/loader/fabric/src/main/java/dev/tellurium/neoforge/loader/FabricEntry.java](../mod/loader/fabric/src/main/java/dev/tellurium/neoforge/loader/FabricEntry.java) | Implementation or explicit public contract |
@@ -579,7 +633,6 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/loader/neoforge/src/main/resources/META-INF/neoforge.mods.toml](../mod/loader/neoforge/src/main/resources/META-INF/neoforge.mods.toml) | Packaged metadata/resource |
 | [mod/neoforge-diagnostics.gradle](../mod/neoforge-diagnostics.gradle) | Build configuration/tooling |
 | [mod/neoforge.gradle](../mod/neoforge.gradle) | Build configuration/tooling |
-| [mod/README.md](../mod/README.md) | Documentation |
 | [mod/sources.gradle](../mod/sources.gradle) | Build configuration/tooling |
 | [mod/targets.gradle](../mod/targets.gradle) | Build configuration/tooling |
 | [mod/versions/1.21.11/removed.txt](../mod/versions/1.21.11/removed.txt) | Tooling, data or provenance |
@@ -601,6 +654,14 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [mod/versions/1.21.4/src/main/resources/tellurium.mixins.json](../mod/versions/1.21.4/src/main/resources/tellurium.mixins.json) | Packaged metadata/resource |
 | [mod/versions/1.21.8/src/main/java/dev/tellurium/neoforge/version/Version.java](../mod/versions/1.21.8/src/main/java/dev/tellurium/neoforge/version/Version.java) | Implementation or explicit public contract |
 | [mod/versions/1.21.8/src/main/resources/tellurium/fused-qualified.properties](../mod/versions/1.21.8/src/main/resources/tellurium/fused-qualified.properties) | Packaged metadata/resource |
+| [mod/versions/26.1.2/renames.gradle](../mod/versions/26.1.2/renames.gradle) | Build configuration/tooling |
+| [mod/versions/26.1.2/src/main/java/dev/tellurium/neoforge/version/Version.java](../mod/versions/26.1.2/src/main/java/dev/tellurium/neoforge/version/Version.java) | Implementation or explicit public contract |
+| [mod/versions/26.1.2/src/main/resources/fabric.mod.json](../mod/versions/26.1.2/src/main/resources/fabric.mod.json) | Packaged metadata/resource |
+| [mod/versions/26.1.2/src/main/resources/tellurium/fused-qualified-ieee.properties](../mod/versions/26.1.2/src/main/resources/tellurium/fused-qualified-ieee.properties) | Packaged metadata/resource |
+| [mod/versions/26.1.2/src/main/resources/tellurium/fused-qualified.properties](../mod/versions/26.1.2/src/main/resources/tellurium/fused-qualified.properties) | Packaged metadata/resource |
+| [mod/versions/26.1.2/src/main/resources/tellurium.accesswidener](../mod/versions/26.1.2/src/main/resources/tellurium.accesswidener) | Packaged metadata/resource |
+| [mod/versions/26.1.2/src/main/resources/tellurium.fabric.mixins.json](../mod/versions/26.1.2/src/main/resources/tellurium.fabric.mixins.json) | Packaged metadata/resource |
+| [mod/versions/26.1.2/src/main/resources/tellurium.mixins.json](../mod/versions/26.1.2/src/main/resources/tellurium.mixins.json) | Packaged metadata/resource |
 
 ## Project tooling, documentation and evidence
 
@@ -610,14 +671,27 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | Tooling, data or provenance |
 | [.gitignore](../.gitignore) | Tooling, data or provenance |
 | [AGENTS.md](../AGENTS.md) | Documentation |
-| [build.gradle](../build.gradle) | Build configuration/tooling |
 | [CHANGELOG.md](../CHANGELOG.md) | Documentation |
-| [CODE_REVIEW.md](../CODE_REVIEW.md) | Documentation |
-| [CODE_REVIEW_2026-10-07.md](../CODE_REVIEW_2026-10-07.md) | Documentation |
+| [LICENSE](../LICENSE) | Tooling, data or provenance |
+| [NOTICE](../NOTICE) | Tooling, data or provenance |
+| [Plan.md](../Plan.md) | Documentation |
+| [README.md](../README.md) | Documentation |
+| [build.gradle](../build.gradle) | Build configuration/tooling |
 | [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) | Documentation |
 | [docs/ATTRIBUTION.md](../docs/ATTRIBUTION.md) | Documentation |
-| [docs/branding/launch-video.md](../docs/branding/launch-video.md) | Documentation |
-| [docs/branding/modrinth-page.md](../docs/branding/modrinth-page.md) | Documentation |
+| [docs/COMPATIBILITY.md](../docs/COMPATIBILITY.md) | Documentation |
+| [docs/CONFIGURATION.md](../docs/CONFIGURATION.md) | Documentation |
+| [docs/CONTRACTS.md](../docs/CONTRACTS.md) | Documentation |
+| [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) | Documentation |
+| [docs/IMPLEMENTATION_MAP.md](../docs/IMPLEMENTATION_MAP.md) | Documentation |
+| [docs/README.md](../docs/README.md) | Documentation |
+| [docs/RELEASING.md](../docs/RELEASING.md) | Documentation |
+| [docs/ROADMAP.md](../docs/ROADMAP.md) | Documentation |
+| [docs/STATUS.md](../docs/STATUS.md) | Documentation |
+| [docs/TESTING.md](../docs/TESTING.md) | Documentation |
+| [docs/TEST_PLAN.md](../docs/TEST_PLAN.md) | Documentation |
+| [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) | Documentation |
+| [docs/V0.2-PLAN.md](../docs/V0.2-PLAN.md) | Documentation |
 | [docs/branding/tellurium-icon-pixel-16.png](../docs/branding/tellurium-icon-pixel-16.png) | Tooling, data or provenance |
 | [docs/branding/tellurium-icon-pixel-256.png](../docs/branding/tellurium-icon-pixel-256.png) | Tooling, data or provenance |
 | [docs/branding/tellurium-icon-pixel-512.png](../docs/branding/tellurium-icon-pixel-512.png) | Tooling, data or provenance |
@@ -627,13 +701,9 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [docs/branding/tellurium-logo-pixel.svg](../docs/branding/tellurium-logo-pixel.svg) | Tooling, data or provenance |
 | [docs/branding/tellurium-logo.png](../docs/branding/tellurium-logo.png) | Tooling, data or provenance |
 | [docs/branding/tellurium-logo.svg](../docs/branding/tellurium-logo.svg) | Tooling, data or provenance |
-| [docs/COMPATIBILITY.md](../docs/COMPATIBILITY.md) | Documentation |
-| [docs/CONFIGURATION.md](../docs/CONFIGURATION.md) | Documentation |
-| [docs/CONTRACTS.md](../docs/CONTRACTS.md) | Documentation |
 | [docs/design/EVIDENCE.md](../docs/design/EVIDENCE.md) | Documentation |
-| [docs/design/performance-model.json](../docs/design/performance-model.json) | Tooling, data or provenance |
 | [docs/design/PROPOSAL.md](../docs/design/PROPOSAL.md) | Documentation |
-| [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) | Documentation |
+| [docs/design/performance-model.json](../docs/design/performance-model.json) | Tooling, data or provenance |
 | [docs/evidence/code-review-20261006.md](../docs/evidence/code-review-20261006.md) | Documentation |
 | [docs/evidence/code-review-20261007.md](../docs/evidence/code-review-20261007.md) | Documentation |
 | [docs/evidence/comparison-c2me.md](../docs/evidence/comparison-c2me.md) | Documentation |
@@ -641,6 +711,7 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [docs/evidence/comparison-voxy.md](../docs/evidence/comparison-voxy.md) | Documentation |
 | [docs/evidence/fabric-port.md](../docs/evidence/fabric-port.md) | Documentation |
 | [docs/evidence/minecraft-1.21.11.md](../docs/evidence/minecraft-1.21.11.md) | Documentation |
+| [docs/evidence/minecraft-26.1.2.md](../docs/evidence/minecraft-26.1.2.md) | Documentation |
 | [docs/evidence/minecraft-versions.md](../docs/evidence/minecraft-versions.md) | Documentation |
 | [docs/evidence/smoothness.md](../docs/evidence/smoothness.md) | Documentation |
 | [docs/evidence/throughput-fused-gpu.md](../docs/evidence/throughput-fused-gpu.md) | Documentation |
@@ -675,34 +746,25 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [docs/evidence/v0.2-shared-end-metadata.md](../docs/evidence/v0.2-shared-end-metadata.md) | Documentation |
 | [docs/evidence/v0.2-shared-fp64-divider.md](../docs/evidence/v0.2-shared-fp64-divider.md) | Documentation |
 | [docs/evidence/v0.2-terrain-mods.md](../docs/evidence/v0.2-terrain-mods.md) | Documentation |
-| [docs/IMPLEMENTATION_MAP.md](../docs/IMPLEMENTATION_MAP.md) | Documentation |
-| [docs/README.md](../docs/README.md) | Documentation |
-| [docs/RELEASING.md](../docs/RELEASING.md) | Documentation |
-| [docs/ROADMAP.md](../docs/ROADMAP.md) | Documentation |
-| [docs/STATUS.md](../docs/STATUS.md) | Documentation |
-| [docs/TEST_PLAN.md](../docs/TEST_PLAN.md) | Documentation |
-| [docs/TESTING.md](../docs/TESTING.md) | Documentation |
-| [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) | Documentation |
 | [docs/v0.2/DRAFT-CLEANUP.md](../docs/v0.2/DRAFT-CLEANUP.md) | Documentation |
 | [docs/v0.2/FILES.md](../docs/v0.2/FILES.md) | Documentation |
 | [docs/v0.2/TESTS.md](../docs/v0.2/TESTS.md) | Documentation |
 | [docs/v0.2/WORK_PACKAGES.json](../docs/v0.2/WORK_PACKAGES.json) | Tooling, data or provenance |
-| [docs/V0.2-PLAN.md](../docs/V0.2-PLAN.md) | Documentation |
 | [gradle/wrapper/gradle-wrapper.jar](../gradle/wrapper/gradle-wrapper.jar) | Tooling, data or provenance |
 | [gradle/wrapper/gradle-wrapper.properties](../gradle/wrapper/gradle-wrapper.properties) | Build configuration/tooling |
 | [gradle.properties](../gradle.properties) | Build configuration/tooling |
 | [gradlew](../gradlew) | Build configuration/tooling |
 | [gradlew.bat](../gradlew.bat) | Build configuration/tooling |
-| [LICENSE](../LICENSE) | Tooling, data or provenance |
-| [NOTICE](../NOTICE) | Tooling, data or provenance |
-| [oracle-1211/build.gradle](../oracle-1211/build.gradle) | Build configuration/tooling |
 | [oracle-1211/README.md](../oracle-1211/README.md) | Documentation |
+| [oracle-1211/build.gradle](../oracle-1211/build.gradle) | Build configuration/tooling |
 | [oracle-1211/src/main/java/dev/tellurium/oracle1211/OracleCaptureMod.java](../oracle-1211/src/main/java/dev/tellurium/oracle1211/OracleCaptureMod.java) | Implementation or explicit public contract |
 | [oracle-1211/src/main/resources/META-INF/neoforge.mods.toml](../oracle-1211/src/main/resources/META-INF/neoforge.mods.toml) | Packaged metadata/resource |
 | [oracle-1211/src/main/resources/pack.mcmeta](../oracle-1211/src/main/resources/pack.mcmeta) | Packaged metadata/resource |
-| [Plan.md](../Plan.md) | Documentation |
-| [README.md](../README.md) | Documentation |
+| [scripts/CompiledReplayInputs.ps1](../scripts/CompiledReplayInputs.ps1) | Tooling, data or provenance |
+| [scripts/Invoke-ReplayProcess.ps1](../scripts/Invoke-ReplayProcess.ps1) | Tooling, data or provenance |
+| [scripts/LogicalEndpointMatrix.ps1](../scripts/LogicalEndpointMatrix.ps1) | Tooling, data or provenance |
 | [scripts/bench-cps.ps1](../scripts/bench-cps.ps1) | Tooling, data or provenance |
+| [scripts/bench-cps.sh](../scripts/bench-cps.sh) | Tooling, data or provenance |
 | [scripts/bench-full.sh](../scripts/bench-full.sh) | Tooling, data or provenance |
 | [scripts/capture-baseline.py](../scripts/capture-baseline.py) | Tooling, data or provenance |
 | [scripts/capture-candidate-saved.ps1](../scripts/capture-candidate-saved.ps1) | Tooling, data or provenance |
@@ -717,13 +779,10 @@ The mod: common source, per-loader and per-Minecraft-version files, and the buil
 | [scripts/compare-dh.sh](../scripts/compare-dh.sh) | Tooling, data or provenance |
 | [scripts/compare-digests.py](../scripts/compare-digests.py) | Tooling, data or provenance |
 | [scripts/compare-flight.sh](../scripts/compare-flight.sh) | Tooling, data or provenance |
-| [scripts/CompiledReplayInputs.ps1](../scripts/CompiledReplayInputs.ps1) | Tooling, data or provenance |
 | [scripts/dh-database-steps.py](../scripts/dh-database-steps.py) | Tooling, data or provenance |
 | [scripts/fetch-fabric-test-files.py](../scripts/fetch-fabric-test-files.py) | Tooling, data or provenance |
 | [scripts/fetch-terrain-test-mods.py](../scripts/fetch-terrain-test-mods.py) | Tooling, data or provenance |
-| [scripts/Invoke-ReplayProcess.ps1](../scripts/Invoke-ReplayProcess.ps1) | Tooling, data or provenance |
 | [scripts/jfr-stage-profile.py](../scripts/jfr-stage-profile.py) | Tooling, data or provenance |
-| [scripts/LogicalEndpointMatrix.ps1](../scripts/LogicalEndpointMatrix.ps1) | Tooling, data or provenance |
 | [scripts/merge-frozen-gpu-replay.ps1](../scripts/merge-frozen-gpu-replay.ps1) | Tooling, data or provenance |
 | [scripts/minecraft-replay.py](../scripts/minecraft-replay.py) | Tooling, data or provenance |
 | [scripts/probe-fused-kernels.ps1](../scripts/probe-fused-kernels.ps1) | Tooling, data or provenance |

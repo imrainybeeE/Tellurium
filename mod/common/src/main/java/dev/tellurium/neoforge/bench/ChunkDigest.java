@@ -38,7 +38,7 @@ public final class ChunkDigest {
     private ChunkDigest() {}
 
     public static String line(ServerLevel level, ChunkAccess chunk) {
-        return chunk.getPos().x + " " + chunk.getPos().z
+        return Version.chunkX(chunk.getPos()) + " " + Version.chunkZ(chunk.getPos())
                 + " blocks=" + blocks(chunk)
                 + " heightmaps=" + heightmaps(chunk)
                 + " post=" + postProcessing(chunk)

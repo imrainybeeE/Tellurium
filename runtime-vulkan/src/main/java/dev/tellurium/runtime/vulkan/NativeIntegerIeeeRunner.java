@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.runtime.vulkan;
 
+import dev.tellurium.compiler.vulkan.fused.FastIeeeHelpers;
+import dev.tellurium.compiler.vulkan.fused.FusedIeeeHelpers;
 import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
 import dev.tellurium.compiler.vulkan.worldgen.WorldgenShaderCompiler;
+import dev.tellurium.runtime.vulkan.fused.FusedLibCampaign;
 import dev.tellurium.semantic.program.EvaluationDomain;
 import dev.tellurium.semantic.program.NumericProfile;
 import dev.tellurium.semantic.program.ProgramNode;
@@ -19,7 +22,11 @@ import java.nio.LongBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.SplittableRandom;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -126,18 +133,55 @@ import static org.lwjgl.vulkan.VK11.vkGetPhysicalDeviceProperties2;
 public final class NativeIntegerIeeeRunner {
     private static final int LOCAL_SIZE = 64;
     private static final long FENCE_TIMEOUT_NANOS = 10_000_000_000L;
+    /**
+     * Diagnostic only (--host-nan-sign-agnostic): Java leaves the sign and payload of a freshly generated NaN
+     * unspecified and the host CPU decides (x86 yields 0xfff8..., AArch64 yields 0x7ff8...), so a captured
+     * reference computed on the host JVM can differ from the device in the NaN sign bit alone. Off by default;
+     * the strict raw-bit comparison is the qualification gate.
+     */
+    private static boolean nanSignAgnostic;
+    private static int nanSignDifferences;
 
     private NativeIntegerIeeeRunner() {}
 
     public static void main(String[] args) throws Exception {
+        boolean fusedIeee = hasFlag(args, "--fused-ieee");
+        boolean fusedLib = hasFlag(args, "--fused-lib");
+        boolean fastIeee = hasFlag(args, "--fast-ieee");
+        if ((fusedIeee ? 1 : 0) + (fusedLib ? 1 : 0) + (fastIeee ? 1 : 0) > 1) {
+            throw new IllegalArgumentException("--fused-ieee, --fused-lib and --fast-ieee do not combine");
+        }
+        if (fusedIeee || fusedLib || fastIeee) {
+            // The fused campaigns have their own shader, vectors and report; they do not combine with the other modes.
+            String mode = fastIeee ? "--fast-ieee" : fusedLib ? "--fused-lib" : "--fused-ieee";
+            for (String other : List.of("--release", "--arithmetic-only", "--blended-only", "--blend-only", "--noise-only",
+                    "--host-nan-sign-agnostic")) {
+                if (hasFlag(args, other)) throw new IllegalArgumentException(mode + " does not combine with " + other);
+            }
+        }
         String source = shaderSource();
         boolean release = hasFlag(args, "--release");
         boolean arithmeticOnly = hasFlag(args, "--arithmetic-only");
+        nanSignAgnostic = hasFlag(args, "--host-nan-sign-agnostic");
         int binaryVectorCount = release ? 1_024 : 320;
         int unaryVectorCount = release ? 1_000_000 : 100_000;
         int rngVectorCount = release ? 1_000_000 : 100_000;
         try (Session session = new Session()) {
+            session.enableInt64 = fastIeee || fusedLib;
             session.selectAndOpen();
+            if (fastIeee) {
+                FastIeee.run(session, outputPath(args));
+                return;
+            }
+            if (fusedIeee) {
+                FusedIeee.run(session, outputPath(args));
+                return;
+            }
+            if (fusedLib) {
+                FusedLibCampaign.run((spirv, operation, input, count, outputWords, extra) ->
+                        session.dispatch(spirv, operation, input, count, outputWords, extra, true), session.name(), outputPath(args));
+                return;
+            }
             if (hasFlag(args, "--blended-only")) {
                 runCapturedBlendedNoise(session, release);
                 return;
@@ -207,8 +251,9 @@ public final class NativeIntegerIeeeRunner {
             String sourceHash = Hashes.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             String spirvHash = Hashes.sha256(spirv);
             String report = report(session.name(), sourceHash, spirvHash, comparisons, operationCounts,
-                    arithmeticOnly ? (release ? "release-arithmetic-only" : "arithmetic-only")
-                            : (release ? "release" : "qualification"));
+                    (arithmeticOnly ? (release ? "release-arithmetic-only" : "arithmetic-only")
+                            : (release ? "release" : "qualification"))
+                            + (nanSignAgnostic ? "-host-nan-sign-agnostic" : ""));
             String output = outputPath(args);
             if (output != null) {
                 Path reportPath = Path.of(output).toAbsolutePath().normalize();
@@ -218,8 +263,19 @@ public final class NativeIntegerIeeeRunner {
             }
             System.out.println("nativeIntegerIeee DEVICE_PASS device=" + session.name()
                     + " comparisons=" + comparisons + " sourceSha256=" + sourceHash
+                    + (nanSignAgnostic ? " nanSignDifferences=" + nanSignDifferences : "")
                     + (output == null ? "" : " report=" + Path.of(output).toAbsolutePath().normalize()));
         }
+    }
+
+    private static boolean capturedBitsMatch(long expectedBits, long actualBits) {
+        if (expectedBits == actualBits) return true;
+        if (nanSignAgnostic && Double.isNaN(Double.longBitsToDouble(expectedBits))
+                && Double.isNaN(Double.longBitsToDouble(actualBits))) {
+            nanSignDifferences++;
+            return true;
+        }
+        return false;
     }
 
     private static String outputPath(String[] args) {
@@ -247,7 +303,9 @@ public final class NativeIntegerIeeeRunner {
                 .append("  \"sourceSha256\": \"").append(sourceHash).append("\",\n")
                 .append("  \"spirvSha256\": \"").append(spirvHash).append("\",\n")
                 .append("  \"comparisons\": ").append(comparisons).append(",\n")
-                .append("  \"mismatches\": 0,\n  \"operations\": {");
+                .append("  \"mismatches\": 0,\n")
+                .append(nanSignAgnostic ? "  \"nanSignDifferences\": " + nanSignDifferences + ",\n" : "")
+                .append("  \"operations\": {");
         for (int i = 0; i < names.length; i++) {
             if (i > 0) json.append(',');
             json.append("\n    \"").append(names[i]).append("\": ").append(operationCounts[i]);
@@ -383,7 +441,7 @@ public final class NativeIntegerIeeeRunner {
                     | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
             int x = input[i * 4], y = input[i * 4 + 1], z = input[i * 4 + 2];
             long expectedBits = Double.doubleToRawLongBits(capturedNoiseExpected(x, y, z));
-            if (actualBits != expectedBits) {
+            if (!capturedBitsMatch(expectedBits, actualBits)) {
                 throw new IllegalStateException("captured NormalNoise mismatch index=" + i
                         + " point=" + x + "," + y + "," + z
                         + " expected=0x" + Long.toHexString(expectedBits)
@@ -421,7 +479,7 @@ public final class NativeIntegerIeeeRunner {
                     | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
             int x = input[i * 4], z = input[i * 4 + 2];
             long expectedBits = Double.doubleToRawLongBits(capturedEndIslandExpected(parameters, x, z));
-            if (actualBits != expectedBits) {
+            if (!capturedBitsMatch(expectedBits, actualBits)) {
                 throw new IllegalStateException("captured End-island mismatch index=" + i
                         + " point=" + x + "," + z
                         + " expected=0x" + Long.toHexString(expectedBits)
@@ -493,7 +551,7 @@ public final class NativeIntegerIeeeRunner {
                 long expectedBits = Double.doubleToRawLongBits(expected);
                 long actualBits = Integer.toUnsignedLong(actual[i * 6])
                         | (Integer.toUnsignedLong(actual[i * 6 + 1]) << 32);
-                if (actualBits != expectedBits) {
+                if (!capturedBitsMatch(expectedBits, actualBits)) {
                     throw new IllegalStateException("captured " + mapper + " weird-scaled mismatch index=" + i
                             + " point=" + x + "," + y + "," + z
                             + " expected=0x" + Long.toHexString(expectedBits)
@@ -1065,6 +1123,8 @@ public final class NativeIntegerIeeeRunner {
         private String name;
         private final List<VkPhysicalDevice> devices = new ArrayList<>();
         private final List<DeviceCapabilities> capabilities = new ArrayList<>();
+        /** Enables {@code shaderInt64} (the fast helpers use 64-bit integers); fails closed when the device lacks it. */
+        boolean enableInt64;
 
         Session() {
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1072,7 +1132,10 @@ public final class NativeIntegerIeeeRunner {
                         .pApplicationName(stack.UTF8("Tellurium synthetic replay"))
                         .applicationVersion(VK10.VK_MAKE_VERSION(0, 1, 0))
                         .apiVersion(VK10.VK_MAKE_VERSION(1, 2, 0));
-                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application);
+                var portabilityInstance = dev.tellurium.runtime.vulkan.VulkanPortability.instanceExtensionsToEnable(stack);
+                var create = VkInstanceCreateInfo.calloc(stack).sType$Default().pApplicationInfo(application)
+                        .flags(dev.tellurium.runtime.vulkan.VulkanPortability.instanceFlags(portabilityInstance))
+                        .ppEnabledExtensionNames(portabilityInstance);
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateInstance(create, null, out), "vkCreateInstance");
                 instance = new VkInstance(out.get(0), create);
@@ -1111,8 +1174,16 @@ public final class NativeIntegerIeeeRunner {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 var queues = org.lwjgl.vulkan.VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(queueFamily).pQueuePriorities(stack.floats(1.0f));
+                var enabledFeatures = VkPhysicalDeviceFeatures.calloc(stack);
+                if (enableInt64) {
+                    var supported = VkPhysicalDeviceFeatures.calloc(stack);
+                    VK10.vkGetPhysicalDeviceFeatures(physical, supported);
+                    if (!supported.shaderInt64()) throw new IllegalStateException("shaderInt64 not supported by " + name);
+                    enabledFeatures.shaderInt64(true);
+                }
                 var create = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues)
-                        .pEnabledFeatures(VkPhysicalDeviceFeatures.calloc(stack));
+                        .pEnabledFeatures(enabledFeatures)
+                        .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(physical, stack));
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateDevice(physical, create, null, out), "vkCreateDevice(integer profile)");
                 device = new VkDevice(out.get(0), physical, create);
@@ -1313,42 +1384,91 @@ public final class NativeIntegerIeeeRunner {
         }
 
         private int[] dispatch(byte[] spirv, int operation, int[] input, int count) {
+            return dispatch(spirv, operation, input, count, 6);
+        }
+
+        private int[] dispatch(byte[] spirv, int operation, int[] input, int count, int outputWords) {
+            return dispatch(spirv, operation, input, count, outputWords, new int[0][], false);
+        }
+
+        /** The pipeline of {@link #cachedSpirv}, kept across dispatches by the campaigns that ask for it. */
+        private byte[] cachedSpirv;
+        private int cachedBindings;
+        private long cachedShader, cachedDescriptorLayout, cachedPipelineLayout, cachedPipeline;
+
+        private void releaseCachedPipeline() {
+            if (cachedPipeline != 0) vkDestroyPipeline(device, cachedPipeline, null);
+            if (cachedPipelineLayout != 0) vkDestroyPipelineLayout(device, cachedPipelineLayout, null);
+            if (cachedDescriptorLayout != 0) vkDestroyDescriptorSetLayout(device, cachedDescriptorLayout, null);
+            if (cachedShader != 0) vkDestroyShaderModule(device, cachedShader, null);
+            cachedSpirv = null;
+            cachedShader = cachedDescriptorLayout = cachedPipelineLayout = cachedPipeline = 0;
+        }
+
+        /**
+         * One dispatch. Binding 0 is the input words, binding 1 the output words, bindings 2 and up are the
+         * {@code extra} word arrays in order (read and written by the shader; the host reads back only the
+         * output). With {@code reusePipeline} the shader module and pipeline are created once per SPIR-V array
+         * and kept until the next different array or {@link #close()}; the large fused-library shader would
+         * otherwise be recompiled by the driver for every chunk.
+         */
+        private int[] dispatch(byte[] spirv, int operation, int[] input, int count, int outputWords, int[][] extra,
+                               boolean reusePipeline) {
+            int bindingCount = 2 + extra.length;
             Allocation inputBuffer = allocate((long) input.length * Integer.BYTES);
             Allocation outputBuffer = null;
+            Allocation[] extraBuffers = new Allocation[extra.length];
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                outputBuffer = allocate((long) count * 6 * Integer.BYTES);
+                outputBuffer = allocate((long) count * outputWords * Integer.BYTES);
                 for (int i = 0; i < input.length; i++) inputBuffer.mapped.putInt(i * 4, input[i]);
+                for (int e = 0; e < extra.length; e++) {
+                    extraBuffers[e] = allocate(Math.max(4L, (long) extra[e].length * Integer.BYTES));
+                    for (int i = 0; i < extra[e].length; i++) extraBuffers[e].mapped.putInt(i * 4, extra[e][i]);
+                }
                 LongBuffer handle = stack.mallocLong(1);
-                ByteBuffer code = MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
+                ByteBuffer code = reusePipeline ? null : MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
                 long shader = 0, descriptorLayout = 0, pipelineLayout = 0, pipeline = 0;
                 long descriptorPool = 0, commandPool = 0, fence = 0;
                 try {
-                    code.put(spirv).flip();
-                    check(vkCreateShaderModule(device, org.lwjgl.vulkan.VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle), "vkCreateShaderModule");
-                    shader = handle.get(0);
-                    var bindings = VkDescriptorSetLayoutBinding.calloc(2, stack);
-                    for (int i = 0; i < 2; i++) bindings.get(i).binding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
-                    check(vkCreateDescriptorSetLayout(device, VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default().pBindings(bindings), null, handle), "vkCreateDescriptorSetLayout");
-                    descriptorLayout = handle.get(0);
-                    var push = org.lwjgl.vulkan.VkPushConstantRange.calloc(1, stack);
-                    // The primitive harness uses the first two words; generated
-                    // worldgen shaders reserve the full four-word dispatch ABI.
-                    push.get(0).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT).offset(0).size(16);
-                    check(vkCreatePipelineLayout(device, org.lwjgl.vulkan.VkPipelineLayoutCreateInfo.calloc(stack).sType$Default().pSetLayouts(stack.longs(descriptorLayout)).pPushConstantRanges(push), null, handle), "vkCreatePipelineLayout");
-                    pipelineLayout = handle.get(0);
-                    var pipelines = VkComputePipelineCreateInfo.calloc(1, stack);
-                    pipelines.get(0).sType$Default().layout(pipelineLayout).stage().sType$Default().stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shader).pName(stack.UTF8("main"));
-                    check(vkCreateComputePipelines(device, 0, pipelines, null, handle), "vkCreateComputePipelines");
-                    pipeline = handle.get(0);
+                    if (reusePipeline && (cachedSpirv != spirv || cachedBindings != bindingCount)) {
+                        releaseCachedPipeline();
+                        ByteBuffer cachedCode = MemoryUtil.memAlloc(spirv.length).order(ByteOrder.nativeOrder());
+                        try {
+                            cachedCode.put(spirv).flip();
+                            cachedShader = createShaderModule(stack, cachedCode, handle);
+                        } finally {
+                            MemoryUtil.memFree(cachedCode);
+                        }
+                        cachedDescriptorLayout = createDescriptorLayout(stack, bindingCount, handle);
+                        cachedPipelineLayout = createPipelineLayout(stack, cachedDescriptorLayout, handle);
+                        cachedPipeline = createPipeline(stack, cachedPipelineLayout, cachedShader, handle);
+                        cachedSpirv = spirv;
+                        cachedBindings = bindingCount;
+                    }
+                    if (reusePipeline) {
+                        shader = cachedShader;
+                        descriptorLayout = cachedDescriptorLayout;
+                        pipelineLayout = cachedPipelineLayout;
+                        pipeline = cachedPipeline;
+                    } else {
+                        code.put(spirv).flip();
+                        shader = createShaderModule(stack, code, handle);
+                        descriptorLayout = createDescriptorLayout(stack, bindingCount, handle);
+                        pipelineLayout = createPipelineLayout(stack, descriptorLayout, handle);
+                        pipeline = createPipeline(stack, pipelineLayout, shader, handle);
+                    }
                     var sizes = VkDescriptorPoolSize.calloc(1, stack);
-                    sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
+                    sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(bindingCount);
                     check(vkCreateDescriptorPool(device, VkDescriptorPoolCreateInfo.calloc(stack).sType$Default().maxSets(1).pPoolSizes(sizes), null, handle), "vkCreateDescriptorPool");
                     descriptorPool = handle.get(0);
                     check(vkAllocateDescriptorSets(device, VkDescriptorSetAllocateInfo.calloc(stack).sType$Default().descriptorPool(descriptorPool).pSetLayouts(stack.longs(descriptorLayout)), handle), "vkAllocateDescriptorSets");
                     long descriptor = handle.get(0);
-                    var writes = VkWriteDescriptorSet.calloc(2, stack);
-                    Allocation[] buffers = {inputBuffer, outputBuffer};
-                    for (int i = 0; i < 2; i++) {
+                    var writes = VkWriteDescriptorSet.calloc(bindingCount, stack);
+                    Allocation[] buffers = new Allocation[bindingCount];
+                    buffers[0] = inputBuffer;
+                    buffers[1] = outputBuffer;
+                    System.arraycopy(extraBuffers, 0, buffers, 2, extra.length);
+                    for (int i = 0; i < bindingCount; i++) {
                         var info = VkDescriptorBufferInfo.calloc(1, stack);
                         info.get(0).buffer(buffers[i].buffer).offset(0).range(buffers[i].mapped.capacity());
                         writes.get(i).sType$Default().dstSet(descriptor).dstBinding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).pBufferInfo(info);
@@ -1373,23 +1493,54 @@ public final class NativeIntegerIeeeRunner {
                     check(vkQueueSubmit(queue, VkSubmitInfo.calloc(stack).sType$Default().pCommandBuffers(stack.pointers(command.address())), fence), "vkQueueSubmit");
                     int wait = vkWaitForFences(device, fence, true, FENCE_TIMEOUT_NANOS);
                     check(wait, "vkWaitForFences(integer conformance)");
-                    int[] output = new int[count * 6];
+                    int[] output = new int[count * outputWords];
                     for (int i = 0; i < output.length; i++) output[i] = outputBuffer.mapped.getInt(i * 4);
                     return output;
                 } finally {
                     if (fence != 0) vkDestroyFence(device, fence, null);
                     if (commandPool != 0) vkDestroyCommandPool(device, commandPool, null);
                     if (descriptorPool != 0) vkDestroyDescriptorPool(device, descriptorPool, null);
-                    if (pipeline != 0) vkDestroyPipeline(device, pipeline, null);
-                    if (pipelineLayout != 0) vkDestroyPipelineLayout(device, pipelineLayout, null);
-                    if (descriptorLayout != 0) vkDestroyDescriptorSetLayout(device, descriptorLayout, null);
-                    if (shader != 0) vkDestroyShaderModule(device, shader, null);
-                    MemoryUtil.memFree(code);
+                    if (!reusePipeline) {
+                        if (pipeline != 0) vkDestroyPipeline(device, pipeline, null);
+                        if (pipelineLayout != 0) vkDestroyPipelineLayout(device, pipelineLayout, null);
+                        if (descriptorLayout != 0) vkDestroyDescriptorSetLayout(device, descriptorLayout, null);
+                        if (shader != 0) vkDestroyShaderModule(device, shader, null);
+                        MemoryUtil.memFree(code);
+                    }
                 }
             } finally {
                 if (outputBuffer != null) free(outputBuffer);
+                for (Allocation buffer : extraBuffers) if (buffer != null) free(buffer);
                 free(inputBuffer);
             }
+        }
+
+        private long createShaderModule(MemoryStack stack, ByteBuffer code, LongBuffer handle) {
+            check(vkCreateShaderModule(device, org.lwjgl.vulkan.VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle), "vkCreateShaderModule");
+            return handle.get(0);
+        }
+
+        private long createDescriptorLayout(MemoryStack stack, int bindingCount, LongBuffer handle) {
+            var bindings = VkDescriptorSetLayoutBinding.calloc(bindingCount, stack);
+            for (int i = 0; i < bindingCount; i++) bindings.get(i).binding(i).descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            check(vkCreateDescriptorSetLayout(device, VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default().pBindings(bindings), null, handle), "vkCreateDescriptorSetLayout");
+            return handle.get(0);
+        }
+
+        private long createPipelineLayout(MemoryStack stack, long descriptorLayout, LongBuffer handle) {
+            var push = org.lwjgl.vulkan.VkPushConstantRange.calloc(1, stack);
+            // The primitive harness uses the first two words; generated
+            // worldgen shaders reserve the full four-word dispatch ABI.
+            push.get(0).stageFlags(VK_SHADER_STAGE_COMPUTE_BIT).offset(0).size(16);
+            check(vkCreatePipelineLayout(device, org.lwjgl.vulkan.VkPipelineLayoutCreateInfo.calloc(stack).sType$Default().pSetLayouts(stack.longs(descriptorLayout)).pPushConstantRanges(push), null, handle), "vkCreatePipelineLayout");
+            return handle.get(0);
+        }
+
+        private long createPipeline(MemoryStack stack, long pipelineLayout, long shader, LongBuffer handle) {
+            var pipelines = VkComputePipelineCreateInfo.calloc(1, stack);
+            pipelines.get(0).sType$Default().layout(pipelineLayout).stage().sType$Default().stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shader).pName(stack.UTF8("main"));
+            check(vkCreateComputePipelines(device, 0, pipelines, null, handle), "vkCreateComputePipelines");
+            return handle.get(0);
         }
 
         private void free(Allocation allocation) {
@@ -1431,12 +1582,859 @@ public final class NativeIntegerIeeeRunner {
         @Override public void close() {
             if (device != null) {
                 vkDeviceWaitIdle(device);
+                releaseCachedPipeline();
                 vkDestroyDevice(device, null);
                 device = null;
             }
             if (instance != null) {
                 vkDestroyInstance(instance, null);
                 instance = null;
+            }
+        }
+    }
+
+    /**
+     * Device campaign for the fused-kernel numeric dialect: the four helpers of {@link FusedIeeeHelpers} and the
+     * existing helpers the dialect relies on that the primitive campaign does not test directly. It has its own
+     * shader, built the way an assembler builds it (the helper closure of the roots, not the whole emitter text),
+     * and its own report, so the primitive campaign's source hash is untouched. Non-NaN results must match Java
+     * bit for bit; a NaN result passes when Java's result is NaN, whatever its sign or payload.
+     */
+    private static final class FusedIeee {
+        private static final int RANDOM_INPUTS = 1_000_000;
+        private static final int CHUNK = 262_144;
+        private static final int INPUT_WORDS = 8;
+        private static final int OUTPUT_WORDS = 2;
+        private static final int MAX_REPORTED = 16;
+
+        private static final int TO_I32 = 0, FROM_I64 = 1, FP32_FROM_I64 = 2, CEIL = 3, SUB = 4, LESS = 5, LESS_EQUAL = 6,
+                EQUAL = 7, TO_FP32 = 8, FROM_FP32 = 9, LERP = 10, FP32_FROM_INT = 11, FP32_LESS = 12,
+                FP32_LESS_EQUAL = 13, FP32_EQUAL = 14;
+        private static final String[] NAMES = {"fused.fp64_to_i32_java", "fused.fp64_from_i64", "fused.fp32_from_i64",
+                "fused.fp64_ceil", "fp64.sub", "fp64.less", "fp64.less_equal", "fp64.equal", "fp64.to_fp32",
+                "fp64.from_fp32", "fp64.lerp", "fp32.from_int", "fp32.less", "fp32.less_equal", "fp32.equal"};
+
+        /** How a device answer is compared with Java's. */
+        private enum Kind { INT32, BITS32, BITS64, BOOL }
+
+        /** The existing helpers the fused kernels call that the primitive campaign never reaches directly. */
+        private static final Set<String> EXISTING_ROOTS = Set.of("wg_fp64_sub", "wg_fp64_less", "wg_fp64_less_equal",
+                "wg_fp64_equal", "wg_fp64_to_fp32", "wg_fp64_from_fp32", "wg_fp64_lerp", "wg_fp32_from_int",
+                "wg_fp32_less", "wg_fp32_less_equal", "wg_fp32_equal");
+
+        /** One entry per operation that disagreed with Java; the campaign reports nothing as passed while any exists. */
+        private static final List<String> failures = new ArrayList<>();
+
+        private FusedIeee() {}
+
+        static void run(Session session, String output) throws java.io.IOException {
+            failures.clear();
+            String source = shaderSource();
+            byte[] spirv = new ShadercCompiler().compile(source);
+            var inspection = new dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract()
+                    .inspectSpirv(spirv, NumericProfile.GPU_IEEE_BITS);
+            if (!inspection.valid()) {
+                throw new IllegalStateException("Fused IEEE conformance module violates GPU_IEEE_BITS: " + inspection.violations());
+            }
+            int[] counts = new int[NAMES.length];
+            var random = new SplittableRandom(0x7e11a1c0f05ed001L);
+
+            // (int) d
+            long[] values = doubleInputs(random, listedDoubles(), RANDOM_INPUTS);
+            counts[TO_I32] = checkUnary(session, spirv, TO_I32, values, Kind.INT32,
+                    value -> (long) (int) Double.longBitsToDouble(value));
+            // (double) long and (float) long
+            long[] integers = integerInputs(random, 53, RANDOM_INPUTS);
+            counts[FROM_I64] = checkUnary(session, spirv, FROM_I64, integers, Kind.BITS64,
+                    value -> Double.doubleToRawLongBits((double) value));
+            integers = integerInputs(random, 24, RANDOM_INPUTS);
+            counts[FP32_FROM_I64] = checkUnary(session, spirv, FP32_FROM_I64, integers, Kind.BITS32,
+                    value -> Float.floatToRawIntBits((float) value) & 0xffffffffL);
+            // Math.ceil
+            values = doubleInputs(random, listedDoubles(), RANDOM_INPUTS);
+            counts[CEIL] = checkUnary(session, spirv, CEIL, values, Kind.BITS64,
+                    value -> Double.doubleToRawLongBits(Math.ceil(Double.longBitsToDouble(value))));
+
+            long[][] pairs = doublePairs(random, RANDOM_INPUTS);
+            counts[SUB] = checkBinary(session, spirv, SUB, pairs, Kind.BITS64,
+                    (left, right) -> Double.doubleToRawLongBits(Double.longBitsToDouble(left) - Double.longBitsToDouble(right)));
+            counts[LESS] = checkBinary(session, spirv, LESS, pairs, Kind.BOOL,
+                    (left, right) -> Double.longBitsToDouble(left) < Double.longBitsToDouble(right) ? 1L : 0L);
+            counts[LESS_EQUAL] = checkBinary(session, spirv, LESS_EQUAL, pairs, Kind.BOOL,
+                    (left, right) -> Double.longBitsToDouble(left) <= Double.longBitsToDouble(right) ? 1L : 0L);
+            counts[EQUAL] = checkBinary(session, spirv, EQUAL, pairs, Kind.BOOL,
+                    (left, right) -> Double.longBitsToDouble(left) == Double.longBitsToDouble(right) ? 1L : 0L);
+
+            values = narrowingInputs(random, RANDOM_INPUTS);
+            counts[TO_FP32] = checkUnary(session, spirv, TO_FP32, values, Kind.BITS32,
+                    value -> Float.floatToRawIntBits((float) Double.longBitsToDouble(value)) & 0xffffffffL);
+            values = floatInputs(random, RANDOM_INPUTS);
+            counts[FROM_FP32] = checkUnary(session, spirv, FROM_FP32, values, Kind.BITS64,
+                    value -> Double.doubleToRawLongBits((double) Float.intBitsToFloat((int) value)));
+
+            long[][] triples = lerpInputs(random, RANDOM_INPUTS);
+            counts[LERP] = checkTernary(session, spirv, LERP, triples, Kind.BITS64, (start, end, delta) -> {
+                // Mth.lerp(delta, start, end)
+                double a = Double.longBitsToDouble(start), b = Double.longBitsToDouble(end), t = Double.longBitsToDouble(delta);
+                return Double.doubleToRawLongBits(a + t * (b - a));
+            });
+
+            long[] ints = intInputs(random, RANDOM_INPUTS);
+            counts[FP32_FROM_INT] = checkUnary(session, spirv, FP32_FROM_INT, ints, Kind.BITS32,
+                    value -> Float.floatToRawIntBits((float) (int) value) & 0xffffffffL);
+            long[][] floatPairs = floatPairs(random, RANDOM_INPUTS);
+            counts[FP32_LESS] = checkBinary(session, spirv, FP32_LESS, floatPairs, Kind.BOOL,
+                    (left, right) -> Float.intBitsToFloat((int) left) < Float.intBitsToFloat((int) right) ? 1L : 0L);
+            counts[FP32_LESS_EQUAL] = checkBinary(session, spirv, FP32_LESS_EQUAL, floatPairs, Kind.BOOL,
+                    (left, right) -> Float.intBitsToFloat((int) left) <= Float.intBitsToFloat((int) right) ? 1L : 0L);
+            counts[FP32_EQUAL] = checkBinary(session, spirv, FP32_EQUAL, floatPairs, Kind.BOOL,
+                    (left, right) -> Float.intBitsToFloat((int) left) == Float.intBitsToFloat((int) right) ? 1L : 0L);
+
+            if (!failures.isEmpty()) {
+                throw new IllegalStateException("fused IEEE campaign FAILED on device " + session.name() + ": "
+                        + failures.size() + " of " + NAMES.length + " operations disagree with Java\n"
+                        + String.join("\n", failures));
+            }
+            int comparisons = 0;
+            for (int count : counts) comparisons += count;
+            String sourceHash = Hashes.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String spirvHash = Hashes.sha256(spirv);
+            StringBuilder json = new StringBuilder("{\n")
+                    .append("  \"schemaVersion\": 1,\n")
+                    .append("  \"status\": \"PASS\",\n")
+                    .append("  \"campaign\": \"fused-ieee\",\n")
+                    .append("  \"profile\": \"GPU_IEEE_BITS\",\n")
+                    .append("  \"device\": \"").append(jsonEscape(session.name())).append("\",\n")
+                    .append("  \"sourceSha256\": \"").append(sourceHash).append("\",\n")
+                    .append("  \"spirvSha256\": \"").append(spirvHash).append("\",\n")
+                    .append("  \"comparisons\": ").append(comparisons).append(",\n")
+                    .append("  \"mismatches\": 0,\n")
+                    .append("  \"operations\": {");
+            for (int i = 0; i < NAMES.length; i++) {
+                if (i > 0) json.append(',');
+                json.append("\n    \"").append(NAMES[i]).append("\": ").append(counts[i]);
+            }
+            json.append("\n  }\n}\n");
+            if (output != null) {
+                Path reportPath = Path.of(output).toAbsolutePath().normalize();
+                Path parent = reportPath.getParent();
+                if (parent != null) Files.createDirectories(parent);
+                Files.writeString(reportPath, json.toString());
+            }
+            System.out.println("nativeIntegerIeee --fused-ieee DEVICE_PASS device=" + session.name()
+                    + " comparisons=" + comparisons + " mismatches=0 sourceSha256=" + sourceHash
+                    + (output == null ? "" : " report=" + Path.of(output).toAbsolutePath().normalize()));
+        }
+
+        /**
+         * The shader an assembler would build: the helper closure of the fused roots plus the existing helpers
+         * under test, then the fused text. The closure never declares {@code wg_failed}.
+         */
+        static String shaderSource() {
+            var roots = new LinkedHashSet<String>(FusedIeeeHelpers.HELPERS);
+            roots.addAll(EXISTING_ROOTS);
+            return """
+                    #version 450
+                    layout(local_size_x=64, local_size_y=1, local_size_z=1) in;
+                    layout(std430, binding=0) readonly buffer Inputs { uint inputBits[]; };
+                    layout(std430, binding=1) writeonly buffer Outputs { uint outputBits[]; };
+                    layout(push_constant) uniform Dispatch { uint count; uint operation; } dispatch;
+                    """ + IntegerIeeeEmitter.helperSource(roots) + FusedIeeeHelpers.source() + """
+                    void main() {
+                        uint index = gl_GlobalInvocationID.x;
+                        if (index >= dispatch.count) return;
+                        uint inputBase = index * 8u, outputBase = index * 2u;
+                        uvec2 a = uvec2(inputBits[inputBase], inputBits[inputBase + 1u]);
+                        uvec2 b = uvec2(inputBits[inputBase + 2u], inputBits[inputBase + 3u]);
+                        uvec2 c = uvec2(inputBits[inputBase + 4u], inputBits[inputBase + 5u]);
+                        uint operation = dispatch.operation;
+                        uvec2 value = uvec2(0xffffffffu, 0xffffffffu);
+                        if (operation == 0u) value = uvec2(uint(wgf_fp64_to_i32_java(a)), 0u);
+                        else if (operation == 1u) value = wgf_fp64_from_i64(a);
+                        else if (operation == 2u) value = uvec2(wgf_fp32_from_i64(a), 0u);
+                        else if (operation == 3u) value = wgf_fp64_ceil(a);
+                        else if (operation == 4u) value = wg_fp64_sub(a, b);
+                        else if (operation == 5u) value = uvec2(wg_fp64_less(a, b) ? 1u : 0u, 0u);
+                        else if (operation == 6u) value = uvec2(wg_fp64_less_equal(a, b) ? 1u : 0u, 0u);
+                        else if (operation == 7u) value = uvec2(wg_fp64_equal(a, b) ? 1u : 0u, 0u);
+                        else if (operation == 8u) value = uvec2(wg_fp64_to_fp32(a), 0u);
+                        else if (operation == 9u) value = wg_fp64_from_fp32(a.x);
+                        else if (operation == 10u) value = wg_fp64_lerp(a, b, c);
+                        else if (operation == 11u) value = uvec2(wg_fp32_from_int(int(a.x)), 0u);
+                        else if (operation == 12u) value = uvec2(wg_fp32_less(a.x, b.x) ? 1u : 0u, 0u);
+                        else if (operation == 13u) value = uvec2(wg_fp32_less_equal(a.x, b.x) ? 1u : 0u, 0u);
+                        else if (operation == 14u) value = uvec2(wg_fp32_equal(a.x, b.x) ? 1u : 0u, 0u);
+                        outputBits[outputBase] = value.x;
+                        outputBits[outputBase + 1u] = value.y;
+                    }
+                    """;
+        }
+
+        private interface Unary { long expected(long value); }
+        private interface Binary { long expected(long left, long right); }
+        private interface Ternary { long expected(long first, long second, long third); }
+
+        private static int checkUnary(Session session, byte[] spirv, int operation, long[] values, Kind kind, Unary reference) {
+            int[] input = new int[values.length * INPUT_WORDS];
+            long[] expected = new long[values.length];
+            for (int i = 0; i < values.length; i++) {
+                put(input, i, 0, values[i]);
+                expected[i] = reference.expected(values[i]);
+            }
+            return check(session, spirv, operation, input, expected, kind);
+        }
+
+        private static int checkBinary(Session session, byte[] spirv, int operation, long[][] pairs, Kind kind, Binary reference) {
+            int[] input = new int[pairs.length * INPUT_WORDS];
+            long[] expected = new long[pairs.length];
+            for (int i = 0; i < pairs.length; i++) {
+                put(input, i, 0, pairs[i][0]);
+                put(input, i, 1, pairs[i][1]);
+                expected[i] = reference.expected(pairs[i][0], pairs[i][1]);
+            }
+            return check(session, spirv, operation, input, expected, kind);
+        }
+
+        private static int checkTernary(Session session, byte[] spirv, int operation, long[][] triples, Kind kind, Ternary reference) {
+            int[] input = new int[triples.length * INPUT_WORDS];
+            long[] expected = new long[triples.length];
+            for (int i = 0; i < triples.length; i++) {
+                put(input, i, 0, triples[i][0]);
+                put(input, i, 1, triples[i][1]);
+                put(input, i, 2, triples[i][2]);
+                expected[i] = reference.expected(triples[i][0], triples[i][1], triples[i][2]);
+            }
+            return check(session, spirv, operation, input, expected, kind);
+        }
+
+        /** Operand {@code slot} of case {@code index}: low word first, as the shader reads it. */
+        private static void put(int[] input, int index, int slot, long bits) {
+            input[index * INPUT_WORDS + slot * 2] = (int) bits;
+            input[index * INPUT_WORDS + slot * 2 + 1] = (int) (bits >>> 32);
+        }
+
+        private static int check(Session session, byte[] spirv, int operation, int[] input, long[] expected, Kind kind) {
+            int count = expected.length;
+            int mismatches = 0;
+            var firstFailures = new StringBuilder();
+            for (int start = 0; start < count; start += CHUNK) {
+                int size = Math.min(CHUNK, count - start);
+                int[] chunk = Arrays.copyOfRange(input, start * INPUT_WORDS, (start + size) * INPUT_WORDS);
+                int[] actual = session.dispatch(spirv, operation, chunk, size, OUTPUT_WORDS);
+                for (int i = 0; i < size; i++) {
+                    long actualBits = Integer.toUnsignedLong(actual[i * OUTPUT_WORDS])
+                            | (Integer.toUnsignedLong(actual[i * OUTPUT_WORDS + 1]) << 32);
+                    if (matches(kind, expected[start + i], actualBits)) continue;
+                    mismatches++;
+                    if (mismatches <= MAX_REPORTED) {
+                        firstFailures.append("\n  index=").append(start + i).append(" input=");
+                        for (int word = 0; word < 6; word++) {
+                            firstFailures.append(word == 0 ? "" : ",").append("0x")
+                                    .append(Integer.toHexString(input[(start + i) * INPUT_WORDS + word]));
+                        }
+                        firstFailures.append(" expected=0x").append(Long.toHexString(expected[start + i]))
+                                .append(" actual=0x").append(Long.toHexString(actualBits));
+                    }
+                }
+            }
+            if (mismatches != 0) {
+                // Every operation still runs, so one failing helper does not hide another.
+                failures.add(NAMES[operation] + ": " + mismatches + " of " + count + " mismatches (first "
+                        + Math.min(mismatches, MAX_REPORTED) + ")" + firstFailures);
+                return 0;
+            }
+            return count;
+        }
+
+        private static boolean matches(Kind kind, long expected, long actual) {
+            switch (kind) {
+                case INT32:
+                    return (int) expected == (int) actual && (actual >>> 32) == 0L;
+                case BOOL:
+                    return expected == actual;
+                case BITS32: {
+                    if ((actual >>> 32) != 0L) return false;
+                    int expectedBits = (int) expected, actualBits = (int) actual;
+                    return Float.isNaN(Float.intBitsToFloat(expectedBits))
+                            ? Float.isNaN(Float.intBitsToFloat(actualBits)) : expectedBits == actualBits;
+                }
+                default:
+                    return Double.isNaN(Double.longBitsToDouble(expected))
+                            ? Double.isNaN(Double.longBitsToDouble(actual)) : expected == actual;
+            }
+        }
+
+        // ---- inputs: the listed vectors first, then seeded edge-weighted and raw random values -------------
+
+        private static final double TWO31 = 2147483648.0;
+
+        private static long[] listedDoubles() {
+            double minSubnormal = Double.longBitsToDouble(1L);
+            double[] values = {0.0, -0.0, minSubnormal, -minSubnormal, Double.longBitsToDouble(0x000fffffffffffffL),
+                    Double.MIN_NORMAL, 0.5, -0.5, Math.nextDown(0.5), Math.nextDown(1.0), -Math.nextDown(1.0), 1.0, -1.0,
+                    Math.nextUp(1.0), 1.5, -1.5, 2147483646.5, -2147483646.5, 2147483647.0, 2147483647.5, -2147483647.5,
+                    TWO31, -TWO31, -TWO31 - 0.5, -TWO31 - 1.0, TWO31 + 0.5, 9007199254740992.0, -9007199254740992.0,
+                    4503599627370495.5, -4503599627370495.5, 4503599627370496.0, 1e300, -1e300, Double.MAX_VALUE,
+                    Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY};
+            long[] raw = new long[values.length + 4];
+            for (int i = 0; i < values.length; i++) raw[i] = Double.doubleToRawLongBits(values[i]);
+            raw[values.length] = 0x7ff8000000000000L;
+            raw[values.length + 1] = 0x7ff0000000000001L;
+            raw[values.length + 2] = 0xfff8000000000000L;
+            raw[values.length + 3] = 0xfff0000000000001L;
+            return raw;
+        }
+
+        private static long[] listedIntegers() {
+            long two53 = 1L << 53, two54 = 1L << 54;
+            return new long[] {0, 1, -1, 2, 3, 16777215, 16777216, 16777217, 16777218, 16777219, 33554435, 134217740, -134217740,
+                    2147483647L, -2147483648L, 2147483648L, 4294967296L, two53 - 1, two53, two53 + 1, two53 + 2, two53 + 3,
+                    -two53 - 1, two54 + 1, two54 + 2, two54 + 3, two54 + 5, two54 + 6, -(two54 + 2), (1L << 62) + 1024,
+                    (1L << 62) + 1025, Long.MAX_VALUE, Long.MAX_VALUE - 1, Long.MAX_VALUE - 1024, Long.MAX_VALUE - 1025,
+                    Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MIN_VALUE + 1024, Long.MIN_VALUE + 1025,
+                    Long.MAX_VALUE - (1L << 39) + 1, Long.MAX_VALUE - (1L << 39), Long.MAX_VALUE - (1L << 39) - 1,
+                    0x7fffff7fffffffffL, 0x7fffff8000000000L, 0x7fffffbfffffffffL, 0x7fffffc000000000L,
+                    0x0000010000800000L, 0x0000010000800001L, 0x00000100007fffffL};
+        }
+
+        private static long[] withRandom(long[] listed, int random, java.util.function.LongSupplier next) {
+            long[] values = Arrays.copyOf(listed, listed.length + random);
+            for (int i = listed.length; i < values.length; i++) values[i] = next.getAsLong();
+            return values;
+        }
+
+        private static long[] doubleInputs(SplittableRandom random, long[] listed, int count) {
+            return withRandom(listed, count, () -> edgeDouble(random));
+        }
+
+        private static long[] integerInputs(SplittableRandom random, int width, int count) {
+            return withRandom(listedIntegers(), count, () -> edgeInteger(random, width));
+        }
+
+        private static long[] intInputs(SplittableRandom random, int count) {
+            long[] listed = {0, 1, -1, 16777215, 16777216, 16777217, 16777219, 33554435, 134217740, 2147483647L,
+                    -2147483648L, -2147483647L, 2147483520L, 2147483519L, 2147483521L, 2147483584L, -16777217, -16777219};
+            return withRandom(listed, count, () -> {
+                switch (random.nextInt(4)) {
+                    case 0: return random.nextInt();
+                    case 1: return random.nextInt() >> random.nextInt(32);
+                    case 2: { // a tie or its neighbours at a random magnitude above 2^24
+                        int leading = 24 + random.nextInt(7);
+                        int dropped = leading - 23;
+                        int significand = (1 << 23) | (random.nextInt() & ((1 << 23) - 1));
+                        int tail = switch (random.nextInt(4)) {
+                            case 0 -> 1 << (dropped - 1);
+                            case 1 -> (1 << (dropped - 1)) + 1;
+                            case 2 -> (1 << (dropped - 1)) - 1;
+                            default -> (1 << dropped) - 1;
+                        };
+                        int value = (significand << dropped) | tail;
+                        return random.nextBoolean() ? -value : value;
+                    }
+                    default: return (random.nextBoolean() ? Integer.MAX_VALUE : Integer.MIN_VALUE) + random.nextInt(65) - 32;
+                }
+            });
+        }
+
+        private static long edgeDouble(SplittableRandom random) {
+            long sign = random.nextBoolean() ? Long.MIN_VALUE : 0L;
+            switch (random.nextInt(9)) {
+                case 0: return random.nextLong();
+                case 1: { // near a power of two at every exponent
+                    long[] fractions = {0, 1, 2, 3, 0xfffffffffffffL, 0xffffffffffffeL, 0xffffffffffffdL, 1L << 51, (1L << 51) - 1};
+                    return sign | ((long) random.nextInt(2048) << 52) | fractions[random.nextInt(fractions.length)];
+                }
+                case 2: { // n + 0.5, a tie between two integers
+                    long magnitude = random.nextLong(1L << 52) >>> random.nextInt(52);
+                    return Double.doubleToRawLongBits((sign == 0 ? 1.0 : -1.0) * (magnitude + 0.5));
+                }
+                case 3: { // around the int range boundaries
+                    double[] deltas = {-2.0, -1.5, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 1.5, 2.0};
+                    double centre = random.nextBoolean() ? TWO31 : (random.nextBoolean() ? 1.0 : 0.0);
+                    double value = (sign == 0 ? 1.0 : -1.0) * (centre + deltas[random.nextInt(deltas.length)]);
+                    for (int steps = random.nextInt(3); steps > 0; steps--) value = random.nextBoolean() ? Math.nextUp(value) : Math.nextDown(value);
+                    return Double.doubleToRawLongBits(value);
+                }
+                case 4: { // subnormals, sometimes with few bits set
+                    long fraction = random.nextLong() & 0xfffffffffffffL;
+                    if (random.nextBoolean()) fraction >>>= random.nextInt(52);
+                    return sign | fraction;
+                }
+                case 5: { // infinities and NaNs with several payload shapes
+                    long fraction = random.nextBoolean() ? 0L : (random.nextLong() & 0xfffffffffffffL);
+                    if (random.nextInt(4) == 0) fraction = 1L << random.nextInt(52);
+                    return sign | (2047L << 52) | fraction;
+                }
+                case 6: return Double.doubleToRawLongBits((random.nextInt(4001) - 2000) / (double) (1 << random.nextInt(6)));
+                case 7: return Double.doubleToRawLongBits((random.nextDouble() * 2.0 - 1.0) * Math.scalb(1.0, random.nextInt(41)));
+                default: {
+                    double value = (double) (random.nextLong() >> random.nextInt(64));
+                    for (int steps = random.nextInt(3); steps > 0; steps--) value = random.nextBoolean() ? Math.nextUp(value) : Math.nextDown(value);
+                    return Double.doubleToRawLongBits(value);
+                }
+            }
+        }
+
+        /** {@code width} is the significand width of the target format: 53 for binary64, 24 for binary32. */
+        private static long edgeInteger(SplittableRandom random, int width) {
+            switch (random.nextInt(7)) {
+                case 0: return random.nextLong();
+                case 1: return random.nextLong() >> random.nextInt(64);
+                case 2: {
+                    long value = (1L << random.nextInt(63)) + random.nextInt(7) - 3;
+                    return random.nextBoolean() ? -value : value;
+                }
+                case 3: { // a rounding tie, or one step either side of it, at a random magnitude
+                    int leading = width + random.nextInt(63 - width);
+                    int dropped = leading - (width - 1);
+                    long significand = (1L << (width - 1)) | (random.nextLong() & ((1L << (width - 1)) - 1));
+                    long half = 1L << (dropped - 1), all = (1L << dropped) - 1;
+                    long tail = switch (random.nextInt(5)) {
+                        case 0 -> half;
+                        case 1 -> (half + 1) & all;
+                        case 2 -> half - 1;
+                        case 3 -> 0L;
+                        default -> all;
+                    };
+                    long value = (significand << dropped) | tail;
+                    return random.nextBoolean() ? -value : value;
+                }
+                case 4: {
+                    long[] ends = {Long.MIN_VALUE, Long.MAX_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE - 1};
+                    return ends[random.nextInt(ends.length)] + random.nextInt(2049) - 1024;
+                }
+                case 5: return random.nextInt(1 << 22) - (1 << 21);
+                default: return (random.nextLong() >> (64 - width - random.nextInt(8))) + random.nextInt(3) - 1;
+            }
+        }
+
+        private static long[][] doublePairs(SplittableRandom random, int count) {
+            long[] listed = listedDoubles();
+            int fixed = listed.length * listed.length;
+            long[][] pairs = new long[fixed + count][];
+            int index = 0;
+            for (long left : listed) for (long right : listed) pairs[index++] = new long[] {left, right};
+            while (index < pairs.length) pairs[index++] = pair64(random);
+            return pairs;
+        }
+
+        private static long[] pair64(SplittableRandom random) {
+            long left = edgeDouble(random);
+            return switch (random.nextInt(6)) {
+                case 0 -> new long[] {left, edgeDouble(random)};
+                case 1 -> new long[] {left, left};
+                case 2 -> new long[] {left, left + random.nextInt(5) - 2};
+                case 3 -> new long[] {left, left ^ Long.MIN_VALUE};
+                case 4 -> new long[] {left, random.nextLong()};
+                default -> new long[] {random.nextBoolean() ? 0x7ff8000000000000L : random.nextLong(), left};
+            };
+        }
+
+        private static long[][] lerpInputs(SplittableRandom random, int count) {
+            long[] listed = listedDoubles();
+            long[] fractions = {0L, Double.doubleToRawLongBits(0.5), Double.doubleToRawLongBits(1.0),
+                    Double.doubleToRawLongBits(0.25), Double.doubleToRawLongBits(-1.0), Double.doubleToRawLongBits(-0.0),
+                    0x7ff8000000000000L};
+            int fixed = listed.length * listed.length;
+            long[][] triples = new long[fixed + count][];
+            int index = 0;
+            for (long start : listed) for (long end : listed) {
+                triples[index] = new long[] {start, end, fractions[index % fractions.length]};
+                index++;
+            }
+            while (index < triples.length) {
+                long[] pair = pair64(random);
+                long delta = switch (random.nextInt(4)) {
+                    case 0 -> Double.doubleToRawLongBits(random.nextDouble());
+                    case 1 -> Double.doubleToRawLongBits(random.nextDouble() * 2.0 - 0.5);
+                    case 2 -> edgeDouble(random);
+                    default -> fractions[random.nextInt(fractions.length)];
+                };
+                // Most of the weight goes to realistic operands: a finite pair of similar magnitude and a fraction in [0, 1].
+                if (random.nextInt(3) == 0) {
+                    double base = (random.nextDouble() * 2.0 - 1.0) * Math.scalb(1.0, random.nextInt(30) - 10);
+                    double span = (random.nextDouble() * 2.0 - 1.0) * Math.scalb(1.0, random.nextInt(30) - 10);
+                    pair = new long[] {Double.doubleToRawLongBits(base), Double.doubleToRawLongBits(base + span)};
+                    delta = Double.doubleToRawLongBits(random.nextDouble());
+                }
+                triples[index++] = new long[] {pair[0], pair[1], delta};
+            }
+            return triples;
+        }
+
+        /** Binary64 values around the binary32 range: ties at binary32 precision, overflow, subnormals, underflow. */
+        private static long[] narrowingInputs(SplittableRandom random, int count) {
+            long[] listed = listedDoubles();
+            long[] extra = new long[listed.length + 16];
+            System.arraycopy(listed, 0, extra, 0, listed.length);
+            double[] floatEdges = {Float.MAX_VALUE, Math.nextUp((double) Float.MAX_VALUE), 3.4028235677973366e38,
+                    3.4028235677973362e38, Float.MIN_NORMAL, Float.MIN_NORMAL / 2.0, Float.MIN_VALUE, Float.MIN_VALUE / 2.0,
+                    Math.nextUp(Float.MIN_VALUE / 2.0), Math.nextDown(Float.MIN_VALUE / 2.0), 16777217.0, 16777219.0,
+                    1.0 + Math.scalb(1.0, -24), Math.nextUp(1.0 + Math.scalb(1.0, -24)), 1.0e-46, 1.0e39};
+            for (int i = 0; i < floatEdges.length; i++) extra[listed.length + i] = Double.doubleToRawLongBits(floatEdges[i]);
+            return withRandom(extra, count, () -> {
+                long sign = random.nextBoolean() ? Long.MIN_VALUE : 0L;
+                switch (random.nextInt(5)) {
+                    case 0: return edgeDouble(random);
+                    case 1: { // normal binary32 range: a tie, one step either side of it, or random low bits
+                        long exponent = 1023 + random.nextInt(256) - 127;
+                        long significand = random.nextLong() & 0x7fffffL;
+                        long tail = switch (random.nextInt(5)) {
+                            case 0 -> 0x10000000L;
+                            case 1 -> 0x10000001L;
+                            case 2 -> 0x0fffffffL;
+                            case 3 -> 0L;
+                            default -> random.nextLong() & 0x1fffffffL;
+                        };
+                        return sign | (exponent << 52) | (significand << 29) | tail;
+                    }
+                    case 2: { // subnormal binary32 range: (k + 0.5) * 2^-149, a tie at the subnormal precision
+                        double value = Math.scalb(random.nextLong(1L << 23) + (random.nextBoolean() ? 0.5 : 0.0), -149);
+                        for (int steps = random.nextInt(3); steps > 0; steps--) value = random.nextBoolean() ? Math.nextUp(value) : Math.nextDown(value);
+                        return Double.doubleToRawLongBits(sign == 0 ? value : -value);
+                    }
+                    case 3: { // the edge of overflow and of underflow
+                        long exponent = random.nextBoolean() ? 1023 + 127 + random.nextInt(3) - 1 : 1023 - 150 + random.nextInt(5) - 2;
+                        return sign | (exponent << 52) | (random.nextLong() & 0xfffffffffffffL);
+                    }
+                    default: return random.nextLong();
+                }
+            });
+        }
+
+        private static long[] floatInputs(SplittableRandom random, int count) {
+            long[] listed = {0x00000000L, 0x80000000L, 0x00000001L, 0x80000001L, 0x007fffffL, 0x00800000L, 0x3f800000L,
+                    0xbf800000L, 0x7f7fffffL, 0xff7fffffL, 0x7f800000L, 0xff800000L, 0x7fc00000L, 0x7f800001L, 0xffc00001L,
+                    0x00400000L, 0x00000002L, 0x007ffffeL};
+            return withRandom(listed, count, () -> edgeFloat(random));
+        }
+
+        private static long edgeFloat(SplittableRandom random) {
+            long sign = random.nextBoolean() ? 0x80000000L : 0L;
+            switch (random.nextInt(6)) {
+                case 0: return random.nextInt() & 0xffffffffL;
+                case 1: return sign | (random.nextInt() & 0x7fffffL);
+                case 2: return sign | ((long) random.nextInt(256) << 23) | (random.nextBoolean() ? 0L : (random.nextInt() & 0x7fffffL));
+                case 3: return sign | (0xffL << 23) | (random.nextInt() & 0x7fffffL);
+                case 4: return sign | ((long) random.nextInt(256) << 23) | (random.nextBoolean() ? 1L : 0x7fffffL);
+                default: return Float.floatToRawIntBits((random.nextInt(4001) - 2000) / (float) (1 << random.nextInt(6))) & 0xffffffffL;
+            }
+        }
+
+        private static long[][] floatPairs(SplittableRandom random, int count) {
+            long[] listed = floatInputs(random, 0);
+            int fixed = listed.length * listed.length;
+            long[][] pairs = new long[fixed + count][];
+            int index = 0;
+            for (long left : listed) for (long right : listed) pairs[index++] = new long[] {left, right};
+            while (index < pairs.length) {
+                long left = edgeFloat(random);
+                pairs[index++] = switch (random.nextInt(6)) {
+                    case 0 -> new long[] {left, edgeFloat(random)};
+                    case 1 -> new long[] {left, left};
+                    case 2 -> new long[] {left, (left + random.nextInt(5) - 2) & 0xffffffffL};
+                    case 3 -> new long[] {left, left ^ 0x80000000L};
+                    case 4 -> new long[] {left, random.nextInt() & 0xffffffffL};
+                    default -> new long[] {random.nextBoolean() ? 0x7fc00000L : (random.nextInt() & 0xffffffffL), left};
+                };
+            }
+            return pairs;
+        }
+    }
+
+
+    /**
+     * Device conformance of the six {@code wgx_} helpers of {@link FastIeeeHelpers} against Java's {@code +},
+     * {@code -} and {@code *} (binary32 with {@code float}): the listed vectors on every pair, then at least
+     * {@link #RANDOM_INPUTS} seeded edge-weighted and raw random pairs per function. A non-NaN result must be
+     * bit-exact; a NaN result passes when Java's is NaN.
+     */
+    private static final class FastIeee {
+        private static final int RANDOM_INPUTS = 1_000_000;
+        private static final int CHUNK = 262_144;
+        private static final int INPUT_WORDS = 8;
+        private static final int OUTPUT_WORDS = 2;
+        private static final int MAX_REPORTED = 16;
+        private static final String[] NAMES = {"wgx_fp64_add", "wgx_fp64_sub", "wgx_fp64_mul", "wgx_fp32_add", "wgx_fp32_sub", "wgx_fp32_mul"};
+
+        private FastIeee() {}
+
+        /** A binary interchange format, so one generator serves both widths. */
+        private record Fmt(int fraction, int expMax, int bias) {
+            static final Fmt F64 = new Fmt(52, 2047, 1023);
+            static final Fmt F32 = new Fmt(23, 255, 127);
+            int width() { return fraction == 52 ? 64 : 32; }
+            long fractionMask() { return (1L << fraction) - 1L; }
+            long mask() { return width() == 64 ? -1L : 0xffffffffL; }
+            long make(long sign, long exponent, long bits) { return (sign << (width() - 1)) | (exponent << fraction) | (bits & fractionMask()); }
+            long negate(long bits) { return bits ^ (1L << (width() - 1)); }
+        }
+
+        private static long java(int operation, long a, long b) {
+            double da = Double.longBitsToDouble(a), db = Double.longBitsToDouble(b);
+            float fa = Float.intBitsToFloat((int) a), fb = Float.intBitsToFloat((int) b);
+            return switch (operation) {
+                case 0 -> Double.doubleToRawLongBits(da + db);
+                case 1 -> Double.doubleToRawLongBits(da - db);
+                case 2 -> Double.doubleToRawLongBits(da * db);
+                case 3 -> Float.floatToRawIntBits(fa + fb) & 0xffffffffL;
+                case 4 -> Float.floatToRawIntBits(fa - fb) & 0xffffffffL;
+                default -> Float.floatToRawIntBits(fa * fb) & 0xffffffffL;
+            };
+        }
+
+        static String shaderSource() {
+            return """
+                    #version 450
+                    #extension GL_ARB_gpu_shader_int64 : require
+                    layout(local_size_x=64, local_size_y=1, local_size_z=1) in;
+                    layout(std430, binding=0) readonly buffer Inputs { uint inputBits[]; };
+                    layout(std430, binding=1) writeonly buffer Outputs { uint outputBits[]; };
+                    layout(push_constant) uniform Dispatch { uint count; uint operation; } dispatch;
+                    """ + IntegerIeeeEmitter.helperSource(FastIeeeHelpers.HELPERS) + FastIeeeHelpers.source() + """
+                    void main() {
+                        uint index = gl_GlobalInvocationID.x;
+                        if (index >= dispatch.count) return;
+                        uint inputBase = index * 8u, outputBase = index * 2u;
+                        uvec2 a = uvec2(inputBits[inputBase], inputBits[inputBase + 1u]);
+                        uvec2 b = uvec2(inputBits[inputBase + 2u], inputBits[inputBase + 3u]);
+                        uint operation = dispatch.operation;
+                        uvec2 value = uvec2(0xffffffffu, 0xffffffffu);
+                        if (operation == 0u) value = wgx_fp64_add(a, b);
+                        else if (operation == 1u) value = wgx_fp64_sub(a, b);
+                        else if (operation == 2u) value = wgx_fp64_mul(a, b);
+                        else if (operation == 3u) value = uvec2(wgx_fp32_add(a.x, b.x), 0u);
+                        else if (operation == 4u) value = uvec2(wgx_fp32_sub(a.x, b.x), 0u);
+                        else if (operation == 5u) value = uvec2(wgx_fp32_mul(a.x, b.x), 0u);
+                        outputBits[outputBase] = value.x;
+                        outputBits[outputBase + 1u] = value.y;
+                    }
+                    """;
+        }
+
+        static void run(Session session, String output) throws java.io.IOException {
+            String source = shaderSource();
+            byte[] spirv = new ShadercCompiler().compile(source);
+            var inspection = new dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract()
+                    .inspectSpirv(spirv, NumericProfile.GPU_IEEE_BITS);
+            if (!inspection.valid()) {
+                throw new IllegalStateException("Fast IEEE conformance module violates GPU_IEEE_BITS: " + inspection.violations());
+            }
+            var random = new SplittableRandom(0x7e11a1c0fa57001L);
+            int[] counts = new int[NAMES.length];
+            var failures = new ArrayList<String>();
+            for (int operation = 0; operation < NAMES.length; operation++) {
+                Fmt f = operation < 3 ? Fmt.F64 : Fmt.F32;
+                boolean multiply = operation == 2 || operation == 5;
+                List<Long> listed = listed(f);
+                var pairs = new ArrayList<long[]>(listed.size() * listed.size() + RANDOM_INPUTS);
+                for (long a : listed) for (long b : listed) pairs.add(new long[] {a, b});
+                for (int i = 0; i < RANDOM_INPUTS; i++) {
+                    long[] pair = switch (i % 4) {
+                        case 0 -> new long[] {random.nextLong() & f.mask(), random.nextLong() & f.mask()};
+                        default -> multiply ? mulPair(f, random) : addPair(f, random);
+                    };
+                    pairs.add(pair);
+                }
+                counts[operation] = check(session, spirv, operation, pairs, failures);
+            }
+            if (!failures.isEmpty()) {
+                throw new IllegalStateException("fast IEEE campaign FAILED on device " + session.name() + ": "
+                        + failures.size() + " of " + NAMES.length + " functions disagree with Java\n" + String.join("\n", failures));
+            }
+            long comparisons = 0;
+            for (int count : counts) comparisons += count;
+            String sourceHash = Hashes.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String spirvHash = Hashes.sha256(spirv);
+            StringBuilder json = new StringBuilder("{\n")
+                    .append("  \"schemaVersion\": 1,\n")
+                    .append("  \"status\": \"PASS\",\n")
+                    .append("  \"campaign\": \"fast-ieee\",\n")
+                    .append("  \"profile\": \"GPU_IEEE_BITS\",\n")
+                    .append("  \"device\": \"").append(jsonEscape(session.name())).append("\",\n")
+                    .append("  \"sourceSha256\": \"").append(sourceHash).append("\",\n")
+                    .append("  \"spirvSha256\": \"").append(spirvHash).append("\",\n")
+                    .append("  \"comparisons\": ").append(comparisons).append(",\n")
+                    .append("  \"mismatches\": 0,\n")
+                    .append("  \"operations\": {");
+            for (int i = 0; i < NAMES.length; i++) {
+                if (i > 0) json.append(',');
+                json.append("\n    \"").append(NAMES[i]).append("\": ").append(counts[i]);
+            }
+            json.append("\n  }\n}\n");
+            if (output != null) {
+                Path reportPath = Path.of(output).toAbsolutePath().normalize();
+                Path parent = reportPath.getParent();
+                if (parent != null) Files.createDirectories(parent);
+                Files.writeString(reportPath, json.toString());
+            }
+            System.out.println("nativeIntegerIeee --fast-ieee DEVICE_PASS device=" + session.name()
+                    + " comparisons=" + comparisons + " mismatches=0 sourceSha256=" + sourceHash
+                    + (output == null ? "" : " report=" + Path.of(output).toAbsolutePath().normalize()));
+        }
+
+        private static int check(Session session, byte[] spirv, int operation, List<long[]> pairs, List<String> failures) {
+            int count = pairs.size();
+            int mismatches = 0;
+            var first = new StringBuilder();
+            for (int start = 0; start < count; start += CHUNK) {
+                int size = Math.min(CHUNK, count - start);
+                int[] input = new int[size * INPUT_WORDS];
+                for (int i = 0; i < size; i++) {
+                    long[] pair = pairs.get(start + i);
+                    input[i * INPUT_WORDS] = (int) pair[0];
+                    input[i * INPUT_WORDS + 1] = (int) (pair[0] >>> 32);
+                    input[i * INPUT_WORDS + 2] = (int) pair[1];
+                    input[i * INPUT_WORDS + 3] = (int) (pair[1] >>> 32);
+                }
+                int[] actual = session.dispatch(spirv, operation, input, size, OUTPUT_WORDS);
+                for (int i = 0; i < size; i++) {
+                    long[] pair = pairs.get(start + i);
+                    long expected = java(operation, pair[0], pair[1]);
+                    long actualBits = Integer.toUnsignedLong(actual[i * OUTPUT_WORDS])
+                            | (Integer.toUnsignedLong(actual[i * OUTPUT_WORDS + 1]) << 32);
+                    if (matches(operation < 3, expected, actualBits)) continue;
+                    mismatches++;
+                    if (mismatches <= MAX_REPORTED) {
+                        first.append("\n  index=").append(start + i).append(" a=0x").append(Long.toHexString(pair[0]))
+                                .append(" b=0x").append(Long.toHexString(pair[1]))
+                                .append(" expected=0x").append(Long.toHexString(expected))
+                                .append(" actual=0x").append(Long.toHexString(actualBits));
+                    }
+                }
+            }
+            if (mismatches != 0) {
+                failures.add(NAMES[operation] + ": " + mismatches + " of " + count + " mismatches (first "
+                        + Math.min(mismatches, MAX_REPORTED) + ")" + first);
+                return 0;
+            }
+            return count;
+        }
+
+        private static boolean matches(boolean wide, long expected, long actual) {
+            if (wide) {
+                return Double.isNaN(Double.longBitsToDouble(expected)) ? Double.isNaN(Double.longBitsToDouble(actual)) : expected == actual;
+            }
+            if ((actual >>> 32) != 0L) return false;
+            return Float.isNaN(Float.intBitsToFloat((int) expected))
+                    ? Float.isNaN(Float.intBitsToFloat((int) actual)) : (int) expected == (int) actual;
+        }
+
+        // ---- inputs ------------------------------------------------------------------------------------
+
+        private static List<Long> listed(Fmt f) {
+            var list = new ArrayList<Long>();
+            long maxFraction = f.fractionMask();
+            long[] exponents = {1, 2, 3, f.bias - f.fraction - 2, f.bias - f.fraction, f.bias - 2, f.bias - 1, f.bias, f.bias + 1,
+                    f.bias + 2, f.bias + f.fraction - 1, f.bias + f.fraction, f.bias + f.fraction + 1, f.expMax - 3, f.expMax - 2,
+                    f.expMax - 1};
+            long[] fractions = {0, 1, 2, 3, maxFraction, maxFraction - 1, 1L << (f.fraction - 1), (1L << (f.fraction - 1)) - 1,
+                    (1L << (f.fraction - 1)) + 1, maxFraction >>> 1, 0x5555555555555555L & maxFraction, 0x2aaaaaaaaaaaaaaaL & maxFraction};
+            for (int sign = 0; sign <= 1; sign++) {
+                list.add(f.make(sign, 0, 0));
+                list.add(f.make(sign, 0, 1));
+                list.add(f.make(sign, 0, 2));
+                list.add(f.make(sign, 0, maxFraction));
+                list.add(f.make(sign, 0, maxFraction - 1));
+                list.add(f.make(sign, 0, 1L << (f.fraction - 1)));
+                list.add(f.make(sign, f.expMax, 0));
+                list.add(f.make(sign, f.expMax, 1L << (f.fraction - 1)));
+                list.add(f.make(sign, f.expMax, 1));
+                list.add(f.make(sign, f.expMax, maxFraction));
+                for (long exponent : exponents) for (long fraction : fractions) list.add(f.make(sign, exponent, fraction));
+            }
+            return list;
+        }
+
+        private static long fraction(Fmt f, SplittableRandom r) {
+            return switch (r.nextInt(6)) {
+                case 0 -> 0L;
+                case 1 -> f.fractionMask();
+                case 2 -> r.nextLong() & f.fractionMask() & (f.fractionMask() << r.nextInt(f.fraction));
+                case 3 -> (r.nextLong() & f.fractionMask()) >>> r.nextInt(f.fraction);
+                case 4 -> (r.nextBoolean() ? 1L : f.fractionMask()) ^ (1L << r.nextInt(f.fraction));
+                default -> r.nextLong() & f.fractionMask();
+            };
+        }
+
+        private static long edge(Fmt f, SplittableRandom r) {
+            long sign = r.nextBoolean() ? 1 : 0;
+            return switch (r.nextInt(10)) {
+                case 0 -> r.nextLong() & f.mask();
+                case 1 -> f.make(sign, 0, fraction(f, r));
+                case 2 -> f.make(sign, f.expMax, r.nextInt(3) == 0 ? 0 : fraction(f, r));
+                case 3 -> f.make(sign, 1 + r.nextInt(3), fraction(f, r));
+                case 4 -> f.make(sign, f.expMax - 1 - r.nextInt(3), fraction(f, r));
+                case 5 -> f.make(sign, f.bias + r.nextInt(7) - 3, fraction(f, r));
+                default -> f.make(sign, 1 + r.nextInt(f.expMax - 1), fraction(f, r));
+            };
+        }
+
+        private static long[] addPair(Fmt f, SplittableRandom r) {
+            long a = edge(f, r);
+            long exponent = (a >>> f.fraction) & f.expMax;
+            long sign = r.nextBoolean() ? 1 : 0;
+            int precision = f.fraction + 1;
+            switch (r.nextInt(9)) {
+                case 0: return new long[] {a, edge(f, r)};
+                case 1: return new long[] {a, r.nextLong() & f.mask()};
+                case 2: {
+                    long e = Math.max(1, Math.min(f.expMax - 1, exponent + r.nextInt(5) - 2));
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+                case 3: return new long[] {a, (f.negate(a) + r.nextInt(7) - 3) & f.mask()};
+                case 4: {
+                    long e = exponent - (precision - 3 + r.nextInt(8));
+                    if (e < 1) e = 1 + r.nextInt(3);
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+                case 5: {
+                    long e = Math.max(1, exponent - precision + r.nextInt(3));
+                    return new long[] {a, f.make(sign, e, r.nextInt(3) == 0 ? fraction(f, r) : (r.nextBoolean() ? 0 : 1))};
+                }
+                case 6: {
+                    long e = 1 + r.nextInt(3);
+                    return new long[] {f.make(sign, e, fraction(f, r)), f.make(sign ^ 1, e + r.nextInt(2), fraction(f, r))};
+                }
+                case 7: {
+                    long e = f.expMax - 1 - r.nextInt(2);
+                    return new long[] {f.make(sign, e, fraction(f, r)), f.make(sign, e - r.nextInt(3), fraction(f, r))};
+                }
+                default: {
+                    long e = Math.max(1, Math.min(f.expMax - 1, exponent - r.nextInt(2 * precision + 8)));
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+            }
+        }
+
+        private static long[] mulPair(Fmt f, SplittableRandom r) {
+            long a = edge(f, r);
+            long sign = r.nextBoolean() ? 1 : 0;
+            switch (r.nextInt(7)) {
+                case 0: return new long[] {a, edge(f, r)};
+                case 1: return new long[] {a, r.nextLong() & f.mask()};
+                case 2: {
+                    long target = new long[] {-2, -1, 0, 1, 2, f.expMax - 3, f.expMax - 2, f.expMax - 1, f.expMax, f.expMax + 1}[r.nextInt(10)];
+                    long e1 = 1 + r.nextInt(f.expMax - 1);
+                    long e2 = target - e1 + f.bias;
+                    if (e2 < 1 || e2 > f.expMax - 1) return new long[] {a, edge(f, r)};
+                    return new long[] {f.make(sign, e1, fraction(f, r)), f.make(r.nextBoolean() ? 1 : 0, e2, fraction(f, r))};
+                }
+                case 3: {
+                    int total = f.fraction - 2 + r.nextInt(5);
+                    int t1 = Math.max(0, Math.min(f.fraction, r.nextInt(total + 1)));
+                    int t2 = Math.max(0, Math.min(f.fraction, total - t1));
+                    long m1 = ((r.nextLong() & f.fractionMask()) | 1L) << t1;
+                    long m2 = ((r.nextLong() & f.fractionMask()) | 1L) << t2;
+                    return new long[] {f.make(sign, f.bias + r.nextInt(7) - 3, m1), f.make(r.nextBoolean() ? 1 : 0, f.bias + r.nextInt(7) - 3, m2)};
+                }
+                case 4: {
+                    long fa = r.nextBoolean() ? 0 : (r.nextBoolean() ? 1 : f.fractionMask());
+                    long fb = r.nextBoolean() ? 0 : (r.nextBoolean() ? 1 : f.fractionMask());
+                    return new long[] {f.make(sign, 1 + r.nextInt(f.expMax - 1), fa), f.make(r.nextBoolean() ? 1 : 0, 1 + r.nextInt(f.expMax - 1), fb)};
+                }
+                case 5: return new long[] {f.make(sign, f.bias + r.nextInt(21) - 10, fraction(f, r)), f.make(r.nextBoolean() ? 1 : 0, f.bias + r.nextInt(21) - 10, fraction(f, r))};
+                default: return new long[] {a, a};
             }
         }
     }

@@ -199,7 +199,7 @@ final class DistantHorizonsColumns {
 
     private static boolean fill(ChunkAccess chunk, Object wrapper, Object tile, Object mapping, Object compression,
                                 IdentityHashMap<BlockState, Block> blocks, IdentityHashMap<Holder<Biome>, Object> biomes) throws Throwable {
-        int offsetX = (chunk.getPos().x & 3) << 4, offsetZ = (chunk.getPos().z & 3) << 4;
+        int offsetX = (Version.chunkX(chunk.getPos()) & 3) << 4, offsetZ = (Version.chunkZ(chunk.getPos()) & 3) << 4;
         int lowest = (int) minNonEmptyHeight.invokeExact(wrapper);
         int top = (int) exclusiveMaxHeight.invokeExact(wrapper);
         int bottom = (int) inclusiveMinHeight.invokeExact(wrapper);

@@ -25,7 +25,7 @@ import java.util.List;
  * own LWJGL core, so the Vulkan/shaderc bindings cannot be ordinary mod
  * dependencies.  The nested jars (runtime classes, LWJGL core, Vulkan,
  * shaderc and their natives) are unpacked once into the game directory and
- * loaded child-first for {@code org.lwjgl.} and the runtime package; every
+ * loaded child-first for {@code org.lwjgl.} and the runtime packages (Vulkan, and on macOS Metal); every
  * other class, including the {@link FusedGpuBackend} contract, comes from the
  * mod's own loader.  That LWJGL copy extracts its natives into a private
  * directory.</p>
@@ -115,7 +115,7 @@ final class GpuRuntimeLoader {
 
         @Override
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            if (name.startsWith("org.lwjgl.") || name.startsWith("dev.tellurium.runtime.vulkan.")) {
+            if (name.startsWith("org.lwjgl.") || name.startsWith("dev.tellurium.runtime.vulkan.") || name.startsWith("dev.tellurium.runtime.metal.")) {
                 synchronized (getClassLoadingLock(name)) {
                     Class<?> loaded = findLoadedClass(name);
                     if (loaded == null) loaded = findClass(name);

@@ -26,9 +26,9 @@ public final class RegistrySnapshotReader {
             var blockName = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             if (blockName == null) throw new IllegalArgumentException("Unregistered block state at id " + id);
             var properties = new LinkedHashMap<String, String>();
-            for (var entry : state.getValues().entrySet()) {
-                Property<?> property = entry.getKey();
-                properties.put(property.getName(), propertyName(property, entry.getValue()));
+            // Property by property (in the state's own order): getValues() stopped being a map in 26.1.
+            for (Property<?> property : state.getProperties()) {
+                properties.put(property.getName(), propertyName(property, state.getValue(property)));
             }
             var descriptor = new BlockStateDescriptor(blockName.toString(), properties);
             states.add(descriptor);
@@ -43,7 +43,7 @@ public final class RegistrySnapshotReader {
         var blockName = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (blockName == null) throw new IllegalArgumentException("Unregistered generator default block");
         var properties = new LinkedHashMap<String, String>();
-        for (var entry : state.getValues().entrySet()) properties.put(entry.getKey().getName(), propertyName(entry.getKey(), entry.getValue()));
+        for (Property<?> property : state.getProperties()) properties.put(property.getName(), propertyName(property, state.getValue(property)));
         return new BlockStateDescriptor(blockName.toString(), properties);
     }
 

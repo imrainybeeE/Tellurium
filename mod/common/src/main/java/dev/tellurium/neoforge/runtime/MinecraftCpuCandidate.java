@@ -109,7 +109,7 @@ public final class MinecraftCpuCandidate {
     public Inputs capture(ServerLevel level, ChunkAccess prerequisite) {
         Objects.requireNonNull(prerequisite, "prerequisite");
         ChunkPos position = prerequisite.getPos();
-        return capture(level, prerequisite, position.x, position.z);
+        return capture(level, prerequisite, Version.chunkX(position), Version.chunkZ(position));
     }
 
     /**
@@ -127,7 +127,7 @@ public final class MinecraftCpuCandidate {
         Objects.requireNonNull(prerequisite, "prerequisite");
         WorldGenRegion region = new WorldGenRegion(level, cache, step, prerequisite);
         ChunkPos position = prerequisite.getPos();
-        return capture(level, prerequisite, position.x, position.z, region);
+        return capture(level, prerequisite, Version.chunkX(position), Version.chunkZ(position), region);
     }
 
     /** Captures a BIOMES prerequisite through Minecraft's authoritative holder path. */
@@ -147,7 +147,7 @@ public final class MinecraftCpuCandidate {
         Objects.requireNonNull(prerequisite, "prerequisite");
         NoiseBasedChunkGenerator generator = requireGenerator(level);
         ChunkPos position = prerequisite.getPos();
-        if (position.x != chunkX || position.z != chunkZ) {
+        if (Version.chunkX(position) != chunkX || Version.chunkZ(position) != chunkZ) {
             throw new IllegalArgumentException("Captured prerequisite coordinates do not match request");
         }
         if (prerequisite.getPersistedStatus() != ChunkStatus.BIOMES) {

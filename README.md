@@ -34,15 +34,19 @@ second; with Tellurium the same server does 2,620 to 2,860.
 | 1.21.1 | Fabric (loader 0.16+, Fabric API) | `tellurium-fabric-1.21.1-0.2.0-alpha.1.jar` |
 | 1.21.11 | NeoForge 21.11.45+ | `tellurium-neoforge-1.21.11-0.2.0-alpha.1.jar` |
 | 1.21.11 | Fabric (Fabric API) | `tellurium-fabric-1.21.11-0.2.0-alpha.1.jar` |
+| 26.1.2 | Fabric (loader 0.19.5+, Fabric API 0.155.3+26.1.2, Java 25+) | `tellurium-fabric-26.1.2-0.2.0-alpha.1.jar` |
 
 Minecraft 1.21.1 is the best-tested version: everything on this page was measured there. On 1.21.11 the
 tested list holds vanilla, Terralith, Tectonic and the two together, and Distant Horizons and Voxy have
-not been run. Builds for 1.21.4 (Fabric) and 1.21.8 (Fabric, NeoForge) can be made from source; see
+not been run. On 26.1.2 only an Apple M3 was used, and no GPU with 64-bit floats, Windows or Linux: on
+Apple GPUs `auto` stays on the processor (the emulated route measured slower than the CPU there), and
+`force` is available; see [Minecraft 26.1.2](docs/evidence/minecraft-26.1.2.md). Builds for 1.21.4
+(Fabric) and 1.21.8 (Fabric, NeoForge) can be made from source; see
 [what was tested on which version](docs/evidence/minecraft-versions.md).
 
 ## Requirements
 
-- Java 21.
+- Java 21 (Java 25 for Minecraft 26.1.2).
 - For the GPU part, a graphics card with Vulkan 1.2 and 64-bit float support (GeForce GTX 10 series and
   newer and Radeon RX 400 series and newer should qualify). Without one the mod says why in the log and
   keeps the processor-side improvements.

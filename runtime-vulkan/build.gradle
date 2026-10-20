@@ -3,10 +3,57 @@ dependencies {
     implementation 'org.lwjgl:lwjgl'
     implementation 'org.lwjgl:lwjgl-vulkan'
     implementation 'org.lwjgl:lwjgl-shaderc'
+    // SPIRV-Cross: the emulated kernels go to MoltenVK as Metal source (MetalKernelSource).
+    implementation 'org.lwjgl:lwjgl-spvc'
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-windows'
     runtimeOnly 'org.lwjgl:lwjgl::natives-linux'
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-linux'
+    runtimeOnly 'org.lwjgl:lwjgl::natives-macos-arm64'
+    runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-macos-arm64'
+    // Carries libMoltenVK.dylib, the Vulkan implementation on macOS.
+    runtimeOnly 'org.lwjgl:lwjgl-vulkan::natives-macos-arm64'
+    runtimeOnly 'org.lwjgl:lwjgl-spvc::natives-macos-arm64'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc::natives-windows'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc::natives-linux'
+}
+
+// The runtime ships on two LWJGL versions: 3.3.3 in the 1.21.x builds, 3.4.1 (the game's) in the 26.1.2 one
+// (mod/gpu-runtime.gradle).  test runs the unit tests on 3.3.3; testCurrentLwjgl runs them all again on 3.4.1, the
+// only version the Metal-source conversion is for (it has to match that MoltenVK's own SPIRV-Cross; an older
+// SPIRV-Cross changes what signed modulo means, and MetalKernelSource refuses it).
+def currentLwjglTestRuntime = configurations.create('currentLwjglTestRuntimeClasspath') {
+    canBeConsumed = false
+    canBeResolved = true
+    extendsFrom configurations.testImplementation, configurations.testRuntimeOnly
+    def runtime = configurations.testRuntimeClasspath.attributes
+    attributes { target -> runtime.keySet().each { key -> target.attribute(key, runtime.getAttribute(key)) } }
+    resolutionStrategy.eachDependency { if (it.requested.group == 'org.lwjgl') it.useVersion '3.4.1' }
+}
+
+// The fused-library shaders passed to shaderc are encoded on LWJGL's thread stack; with the fast helpers they are
+// larger than its 64 KB default, as the shipped runtime's configured stack allows.
+tasks.named('test') {
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    exclude '**/MetalKernelSourceTest*'
+}
+tasks.register('testCurrentLwjgl', Test) {
+    group = 'verification'
+    description = 'The unit tests on LWJGL 3.4.1, which the 26.1.2 build bundles (test runs them on 3.3.3).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.output + sourceSets.main.output + currentLwjglTestRuntime
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+}
+tasks.named('check') { dependsOn 'testCurrentLwjgl' }
+
+tasks.register('nativeDeviceProbe', JavaExec) {
+    group = 'verification'
+    description = 'Opt-in G0 probe: lists Vulkan devices with the properties, limits and extensions the integer profile needs.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    mainClass = 'dev.tellurium.runtime.vulkan.NativeDeviceProbe'
+    args "--output=${layout.buildDirectory.file('reports/native-device-probe.json').get().asFile.absolutePath}"
 }
 
 tasks.register('nativeIntegerIeeeCompile', JavaExec) {
@@ -20,14 +67,36 @@ tasks.register('nativeIntegerIeeeCompile', JavaExec) {
 
 tasks.register('nativeIntegerIeee', JavaExec) {
     group = 'verification'
-    description = 'Opt-in real-device integer-carrier arithmetic conformance; fails when no suitable Vulkan device exists.'
+    description = 'Opt-in real-device integer-carrier arithmetic conformance (-Ptellurium.ieeeFused=true: the fused-kernel helpers instead; -Ptellurium.ieeeFusedLib=true: the fused library functions instead; -Ptellurium.ieeeFast=true: the fast wgx_ add/sub/mul helpers instead); fails when no suitable Vulkan device exists.'
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
     jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
     mainClass = 'dev.tellurium.runtime.vulkan.NativeIntegerIeeeRunner'
-    args "--output=${layout.buildDirectory.file('reports/native-integer-ieee.json').get().asFile.absolutePath}"
+    def fusedIeee = providers.gradleProperty('tellurium.ieeeFused').map { it == 'true' }.orElse(false).get()
+    def fusedLib = providers.gradleProperty('tellurium.ieeeFusedLib').map { it == 'true' }.orElse(false).get()
+    def fastIeee = providers.gradleProperty('tellurium.ieeeFast').map { it == 'true' }.orElse(false).get()
+    def reportName = fastIeee ? 'reports/native-integer-ieee-fast.json' : (fusedLib ? 'reports/native-integer-ieee-fused-lib.json' : (fusedIeee ? 'reports/native-integer-ieee-fused.json' : 'reports/native-integer-ieee.json'))
+    args "--output=${layout.buildDirectory.file(reportName).get().asFile.absolutePath}"
+    if (fusedIeee) args '--fused-ieee'
+    if (fusedLib) args '--fused-lib'
+    if (fastIeee) args '--fast-ieee'
     if (providers.gradleProperty('tellurium.ieeeRelease').map { it == 'true' }.orElse(false).get()) args '--release'
     if (providers.gradleProperty('tellurium.ieeeArithmeticOnly').map { it == 'true' }.orElse(false).get()) args '--arithmetic-only'
+    if (providers.gradleProperty('tellurium.ieeeHostNanSignAgnostic').map { it == 'true' }.orElse(false).get()) args '--host-nan-sign-agnostic'
+}
+
+tasks.register('nativeIntegerIeeeThroughput', JavaExec) {
+    group = 'verification'
+    description = 'Opt-in sustained-throughput microbenchmark of the integer-carrier fp64/fp32 helpers next to native int32/int64/fp32; not a conformance or Minecraft test.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+    mainClass = 'dev.tellurium.runtime.vulkan.NativeIntegerIeeeThroughput'
+    providers.gradleProperty('tellurium.throughputDumpAsm').orNull?.with { jvmArgs "-Dtellurium.throughput.dumpAsm=${it}" }
+    args "--output=${layout.buildDirectory.file('reports/native-integer-ieee-throughput.json').get().asFile.absolutePath}"
+    providers.gradleProperty('tellurium.throughputRuns').orNull?.with { args "--runs=${it}" }
+    providers.gradleProperty('tellurium.throughputTargetMs').orNull?.with { args "--target-ms=${it}" }
+    providers.gradleProperty('tellurium.throughputOnly').orNull?.with { args "--only=${it}" }
 }
 
 tasks.register('nativeWorldgenSmoke', JavaExec) {

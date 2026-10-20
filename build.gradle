@@ -1,9 +1,21 @@
-plugins { id 'base' }
+plugins {
+    id 'base'
+    // The loaders' plugins, once for every build of the mod (mod/fabric.gradle, mod/fabric-unobfuscated.gradle,
+    // mod/neoforge.gradle), so that all of them load the same copy.
+    id 'net.fabricmc.fabric-loom-remap' version '1.15.5' apply false
+    id 'net.fabricmc.fabric-loom' version '1.15.5' apply false
+    id 'net.neoforged.moddev' version '2.0.148' apply false
+}
 group = 'dev.tellurium'
 version = '0.2.0-alpha.1'
-if (JavaVersion.current() != JavaVersion.VERSION_21) {
-    throw new GradleException('Tellurium builds require JDK 21. Set JAVA_HOME to a JDK 21 installation.')
+// Gradle runs on JDK 25, which Minecraft 26.1 and its Fabric Loom need; the pure modules and the builds for
+// earlier Minecraft versions compile with a JDK 21 toolchain (below), the 26.1 builds with JDK 25.
+if (JavaVersion.current() < JavaVersion.VERSION_25) {
+    throw new GradleException('Tellurium builds run Gradle on JDK 25. Set JAVA_HOME to a JDK 25 installation (a JDK 21 must be installed as well).')
 }
+// Gradle 9 has no Project.exec; the tasks below that run a script take the service instead.
+interface InjectedExecOperations { @javax.inject.Inject ExecOperations getExecOperations() }
+def execOperations = objects.newInstance(InjectedExecOperations).execOperations
 def moduleDependencies = [
     'compiler-jvm':['semantic-core'],
     'compiler-vulkan':['semantic-core'],
@@ -12,6 +24,7 @@ def moduleDependencies = [
     'chunk-engine':['semantic-core','material-codec','spatial-data'],
     'frontend-mc1211':['semantic-core'],
     'runtime-vulkan':['semantic-core','compiler-vulkan'],
+    'runtime-metal':['semantic-core','compiler-vulkan','runtime-vulkan'],
     'oracle-and-replay':['semantic-core','compiler-jvm','compiler-vulkan','material-codec','spatial-data','chunk-engine','frontend-mc1211','runtime-vulkan']
 ]
 // The builds of the mod (mod/targets.gradle) all use the same pure modules.
@@ -218,7 +231,7 @@ tasks.register('replayMinecraftNoiseCpu') {
     group = 'verification'
     description = 'Capture and compare the owned CPU candidate against the independent Minecraft NOISE corpus; heavy and opt-in.'
     doLast {
-        exec {
+        execOperations.exec {
             commandLine 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                     rootProject.file('scripts/replay-minecraft-noise-cpu.ps1').absolutePath,
                     '-ExpectedRoot', rootProject.file('build/oracle-captures/original').absolutePath
@@ -230,7 +243,7 @@ tasks.register('replayMinecraftNoiseGpu') {
     group = 'verification'
     description = 'Capture and compare the real GPU candidate against the independent Minecraft NOISE corpus; heavy, opt-in and fail-closed.'
     doLast {
-        exec {
+        execOperations.exec {
             commandLine 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                     rootProject.file('scripts/replay-minecraft-noise-gpu.ps1').absolutePath,
                     '-ExpectedRoot', rootProject.file('build/oracle-captures/original').absolutePath
@@ -291,7 +304,7 @@ tasks.register('testInstalledMod') {
         if (!serverJar.isEmpty()) arguments += ['-ServerJar', serverJar]
         if (!runRoot.isEmpty()) arguments += ['-RunRoot', runRoot]
         if (!javaHome.isEmpty()) arguments += ['-JavaHome', javaHome]
-        exec { commandLine arguments }
+        execOperations.exec { commandLine arguments }
     }
 }
 

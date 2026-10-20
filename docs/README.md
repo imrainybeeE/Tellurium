@@ -17,7 +17,7 @@
 | [Throughput](evidence/throughput-fused-gpu.md) | Chunks per second, how they were measured, history |
 | [Smoothness](evidence/smoothness.md) | Stutter with Distant Horizons, Voxy and fast flight |
 | [Distant Horizons](evidence/comparison-distant-horizons.md), [Voxy](evidence/comparison-voxy.md), [C2ME](evidence/comparison-c2me.md) | Comparisons |
-| [Minecraft versions](evidence/minecraft-versions.md), [1.21.11](evidence/minecraft-1.21.11.md), [Fabric](evidence/fabric-port.md) | What was run on which build |
+| [Minecraft versions](evidence/minecraft-versions.md), [1.21.11](evidence/minecraft-1.21.11.md), [26.1.2](evidence/minecraft-26.1.2.md), [Fabric](evidence/fabric-port.md) | What was run on which build |
 | [Status](STATUS.md) | A dated log of what was done and what it was checked with |
 
 ## Working on the mod

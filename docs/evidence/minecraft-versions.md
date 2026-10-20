@@ -16,16 +16,18 @@
 | 1.21.8 | NeoForge 21.8.54+ | `neoforge-1218` | `tellurium-neoforge-1.21.8-<version>.jar` | verified as below |
 | 1.21.11 | Fabric | `fabric-12111` | `tellurium-fabric-1.21.11-<version>.jar` | `docs/evidence/minecraft-1.21.11.md` |
 | 1.21.11 | NeoForge 21.11.45+ | `neoforge-12111` | `tellurium-neoforge-1.21.11-<version>.jar` | `docs/evidence/minecraft-1.21.11.md` |
+| 26.1.2 | Fabric (loader 0.19.5+, Fabric API 0.155.3+26.1.2, Java 25+) | `fabric-2612` | `tellurium-fabric-26.1.2-<version>.jar` | `docs/evidence/minecraft-26.1.2.md`; CPU side verified on an Apple M3; on Apple GPUs the GPU is off by default |
 
-The work is on 1.21.1 and 1.21.11, on both loaders; 1.21.4 and 1.21.8 are as
-this document left them, apart from the regression runs in the 1.21.11
-document.
+The work is on 1.21.1 and 1.21.11, on both loaders, and on 26.1.2 (Fabric);
+1.21.4 and 1.21.8 are as this document left them, apart from the regression
+runs in the 1.21.11 document.
 
 Not ported: NeoForge for 1.21.4 (the module compiled against NeoForge
 21.4.158 and was set aside unrun: ScalableLux has no NeoForge build for
 1.21.4, and every test run here includes ScalableLux); Minecraft 1.21.5 to
 1.21.7 (not built or run; the 1.21.8 jars declare 1.21.8 only); 1.21.9 and
-1.21.10 (not built or run; the 1.21.11 jars declare 1.21.11 only); 26.x.
+1.21.10 (not built or run; the 1.21.11 jars declare 1.21.11 only); NeoForge
+for 26.1.2. Fabric for 26.1.2 is ported: `docs/evidence/minecraft-26.1.2.md`.
 
 ## How a version is built
 
@@ -64,6 +66,12 @@ What changed in Minecraft and what the mod does about it:
 | 1.21.2 | Registry, height and chunk-flag methods renamed | `Version` |
 | 1.21.5 | Chunk tickets: a ticket kind is a plain value without a type parameter, and a chunk holds one ticket per kind and level, with no key | `Version.Ticket` counts the keys itself. The mod's kinds are not registered: they are never saved, and a registered kind would have to exist on clients too |
 | 1.21.5 | NBT getters return `Optional` | `Version` |
+| 26.1 | Not obfuscated: no mappings, no remapping, no Fabric name table; `Loader.TRANSLATES` is true only in the intermediary namespace | Fabric builds use `mod/fabric-unobfuscated.gradle`; the access widener is a class tweaker (`classTweaker v1 official`); Mixin `compatibilityLevel` is `JAVA_25` |
+| 26.1 | `ChunkPos` is a record: coordinates are accessors, `toLong()` and `ChunkPos.asLong()` became `pack()` | `Version.chunkX` and `Version.chunkZ`; the `pack()` change is a rename in `mod/versions/26.1.2/renames.gradle` |
+| 26.1 | `BlockState.getValues()` returns a stream; `WorldData.worldGenOptions()` is gone | The mod iterates `getProperties()` with `getValue()`; the seed comes from `ServerLevel.getSeed()` |
+| 26.1 | `ChunkMap`'s constructor runs code before `super()`, so Mixin drops `@Unique` field initialisers | The unload-type cache is created on first use |
+| 26.1 | Dimensions are stored under `dimensions/<namespace>/<id>/` | The scripts follow it |
+| 26.1 | World generation, diffed against 1.21.11: nothing relevant to the mod; the Nether router uses two new noises | The frontend handles them. Details: `docs/evidence/minecraft-26.1.2.md` |
 
 Left out after 1.21.1 (each is an optimisation; none changes what is
 generated): reading chunks off the server thread (`ChunkMapAsyncLoadMixin`,
@@ -208,4 +216,8 @@ rows again.
 Ported for 1.21.11 on both loaders after this document was written: see
 `docs/evidence/minecraft-1.21.11.md`. What stood here (world generation
 changed in 1.21.9; a newer Fabric Loom is needed) is described there with what
-was done about it. Fabric Loom 1.13.6 turned out to run on Gradle 8.14.
+was done about it. Fabric Loom 1.13.6 turned out to run on Gradle 8.14; since the 26.1.2 port the build runs Gradle 9.4.0 with Loom 1.15.5 (see `docs/evidence/minecraft-26.1.2.md`).
+
+## 26.1 and later
+
+Ported for 26.1.2 on Fabric: see `docs/evidence/minecraft-26.1.2.md`. NeoForge for 26.1.2 is not ported.

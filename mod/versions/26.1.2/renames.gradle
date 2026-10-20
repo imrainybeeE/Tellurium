@@ -1,0 +1,8 @@
+// Minecraft names that changed by 26.1 without anything else changing, as regular expression -> replacement.
+// Applied on top of those of 1.21.11 (mod/sources.gradle).
+ext.portRenames = [
+    // ChunkPos became a record: toLong() is pack(), and the static asLong(x, z) is pack(x, z).  Every toLong()
+    // in the mod is a ChunkPos one.  Its fields x and z became accessors, which Version.chunkX/chunkZ cover.
+    (/\.toLong\(\)/): '.pack()',
+    (/\bChunkPos\.asLong\(/): 'ChunkPos.pack(',
+]

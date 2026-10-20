@@ -57,10 +57,10 @@ public final class MinecraftLogicalSnapshotWriter {
             throw new IllegalArgumentException("Candidate logical endpoint is unsupported: " + endpoint);
         }
 
-        String seed = Long.toString(level.getServer().getWorldData().worldGenOptions().seed());
+        String seed = Long.toString(level.getSeed());
         String dimension = level.dimension().location().toString();
-        int chunkX = chunk.getPos().x;
-        int chunkZ = chunk.getPos().z;
+        int chunkX = Version.chunkX(chunk.getPos());
+        int chunkZ = Version.chunkZ(chunk.getPos());
         String context = contextFingerprint(seed, dimension, normalizedEndpoint, chunkX, chunkZ);
         String identity = String.join("/", source, stackFingerprint, seed, dimension,
                 Integer.toString(chunkX), Integer.toString(chunkZ), normalizedEndpoint, context);

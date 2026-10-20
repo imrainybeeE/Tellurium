@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import dev.tellurium.neoforge.version.Version;
 
 /**
  * A WorldGenRegion resolves every block, biome and height read to a chunk
@@ -61,8 +62,8 @@ public abstract class WorldGenRegionChunkCacheMixin {
                 tellurium$radius = 0;
                 return;
             }
-            tellurium$centerX = center.getPos().x;
-            tellurium$centerZ = center.getPos().z;
+            tellurium$centerX = Version.chunkX(center.getPos());
+            tellurium$centerZ = Version.chunkZ(center.getPos());
             int side = 2 * tellurium$radius + 1;
             tellurium$allowedIndex = new int[side * side];
             tellurium$chunks = new ChunkAccess[side * side];

@@ -1,5 +1,6 @@
 param(
-    [string]$JavaHome = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot',
+    # Gradle runs on JDK 25 (build.gradle); default: JAVA_HOME, else the newest Eclipse Adoptium jdk-25*
+    [string]$JavaHome = '',
     [ValidateSet('BIOMES', 'NOISE', 'SURFACE', 'CARVERS', 'FEATURES', 'FULL')]
     [string]$Status = 'NOISE',
     [int]$RadiusChunks = 45,
@@ -27,6 +28,14 @@ $report = Join-Path $repoRoot "build\bench\$Label-$($Status.ToLower())-$stamp.js
 if ($ReopenRunDir) {
     $runDir = (Resolve-Path (Join-Path $repoRoot $ReopenRunDir)).Path
 } elseif (Test-Path -LiteralPath $runDir) { throw "Refusing to reuse $runDir" }
+if (-not $JavaHome) { $JavaHome = $env:JAVA_HOME }
+if (-not $JavaHome -and $env:ProgramFiles) {
+    $adoptium = Join-Path $env:ProgramFiles 'Eclipse Adoptium'
+    if (Test-Path -LiteralPath $adoptium) {
+        $JavaHome = (Get-ChildItem -LiteralPath $adoptium -Directory -Filter 'jdk-25*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
+    }
+}
+if (-not $JavaHome) { throw 'No JDK 25 found: pass -JavaHome or set JAVA_HOME (Gradle runs on JDK 25; a JDK 21 must be installed as well).' }
 $env:JAVA_HOME = $JavaHome
 if ($ModsDir) {
     $mods = Join-Path $runDir 'mods'

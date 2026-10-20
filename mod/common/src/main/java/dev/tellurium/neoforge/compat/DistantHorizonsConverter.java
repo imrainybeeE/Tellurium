@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import dev.tellurium.neoforge.version.Version;
 
 /**
  * Runs Distant Horizons' own chunk-to-LOD conversion on this mod's threads.
@@ -138,7 +139,7 @@ final class DistantHorizonsConverter {
                     DistantHorizonsColumns.fill(chunks, wrappers, tileDataSource);
                     TILES_WRITTEN.incrementAndGet();
                     if (DistantHorizonsColumns.CHECK) {
-                        int tileX = chunks[0].getPos().x >> 2, tileZ = chunks[0].getPos().z >> 2;
+                        int tileX = Version.chunkX(chunks[0].getPos()) >> 2, tileZ = Version.chunkZ(chunks[0].getPos()) >> 2;
                         long position = (long) encodeSection.invoke(null, tileDetail, tileX, tileZ);
                         Object mine = tileDataSource;
                         for (int attempt = 0; ; attempt++) {

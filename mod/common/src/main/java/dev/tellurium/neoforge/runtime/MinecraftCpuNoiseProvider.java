@@ -32,6 +32,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import dev.tellurium.neoforge.version.Version;
 
 /**
  * Qualified CPU composition for the version-pinned NOISE boundary.
@@ -215,7 +216,7 @@ public final class MinecraftCpuNoiseProvider implements StagedRoute.QualifiedNoi
         try {
             Path root = Path.of(directory).toAbsolutePath().normalize();
             Files.createDirectories(root);
-            Path output = root.resolve("chunk-" + chunk.getPos().x + "-" + chunk.getPos().z + ".chunk");
+            Path output = root.resolve("chunk-" + Version.chunkX(chunk.getPos()) + "-" + Version.chunkZ(chunk.getPos()) + ".chunk");
             Files.write(output, ChunkResultCodec.encode(result),
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
@@ -232,7 +233,7 @@ public final class MinecraftCpuNoiseProvider implements StagedRoute.QualifiedNoi
         try {
             Path root = Path.of(directory).toAbsolutePath().normalize();
             Files.createDirectories(root);
-            String stem = "chunk-" + chunk.getPos().x + "-" + chunk.getPos().z;
+            String stem = "chunk-" + Version.chunkX(chunk.getPos()) + "-" + Version.chunkZ(chunk.getPos());
             Path output = root.resolve(stem + ".cpu-receipt.json");
             String json = "{\n"
                     + "  \"schemaVersion\":1,\n"
@@ -270,7 +271,7 @@ public final class MinecraftCpuNoiseProvider implements StagedRoute.QualifiedNoi
         try {
             Path root = Path.of(directory).toAbsolutePath().normalize();
             Files.createDirectories(root);
-            String stem = "chunk-" + chunk.getPos().x + "-" + chunk.getPos().z;
+            String stem = "chunk-" + Version.chunkX(chunk.getPos()) + "-" + Version.chunkZ(chunk.getPos());
             Path output = root.resolve(stem + ".candidate-status");
             String status = failure == null ? "PASS\nCOMMITTED\n" : "FAIL\n" + detail(failure) + "\n";
             Files.writeString(output, status, StandardOpenOption.CREATE,

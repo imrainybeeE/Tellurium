@@ -51,6 +51,16 @@ public final class Version {
         return "1.21.1";
     }
 
+    /** A chunk position's x (a field until 26.1, an accessor since). */
+    public static int chunkX(ChunkPos position) {
+        return position.x;
+    }
+
+    /** A chunk position's z. */
+    public static int chunkZ(ChunkPos position) {
+        return position.z;
+    }
+
     /** The rule this Minecraft version uses to mark aquifer blocks for a fluid update. */
     public static dev.tellurium.compiler.vulkan.fused.FusedNoiseCompiler.FluidUpdates fluidUpdates() {
         return dev.tellurium.compiler.vulkan.fused.FusedNoiseCompiler.FluidUpdates.BETWEEN_AQUIFERS;

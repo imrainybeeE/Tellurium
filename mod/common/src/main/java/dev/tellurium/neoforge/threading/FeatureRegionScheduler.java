@@ -40,7 +40,7 @@ public final class FeatureRegionScheduler {
     private final ArrayDeque<Pending<?>> waiting = new ArrayDeque<>();
 
     public <T> CompletableFuture<T> submit(ChunkPos pos, Supplier<CompletableFuture<T>> body) {
-        Pending<T> pending = new Pending<>(pos.x, pos.z, body, new CompletableFuture<>());
+        Pending<T> pending = new Pending<>(Version.chunkX(pos), Version.chunkZ(pos), body, new CompletableFuture<>());
         boolean start;
         synchronized (this) {
             start = free(pending.x, pending.z);

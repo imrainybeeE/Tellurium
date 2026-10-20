@@ -246,7 +246,7 @@ public final class Pregenerator {
                         submitted = index;
                         ChunkPos pos = new ChunkPos((int) packed, (int) (packed >> 32));
                         server.execute(() -> TICKET.add(cache, pos, 0, pos));
-                        cache.getChunkFuture(pos.x, pos.z, ChunkStatus.FULL, true).whenComplete((result, error) -> {
+                        cache.getChunkFuture(Version.chunkX(pos), Version.chunkZ(pos), ChunkStatus.FULL, true).whenComplete((result, error) -> {
                             if (error == null && result != null && result.isSuccess()) completed.incrementAndGet();
                             else failed.incrementAndGet();
                             settled(requested);

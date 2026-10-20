@@ -14,6 +14,26 @@ bash scripts/test-installed-fabric.sh 100          # the built Fabric jar on a r
 NEOFORGE_MC=1.21.11 bash scripts/test-installed-neoforge.sh 100
 ```
 
+Without PowerShell (macOS, Linux) and, for a host without a usable GPU, without the GPU:
+
+```sh
+# Fresh-world throughput run: bash port of bench-cps.ps1, same flags
+# (MODULE=<target>; BENCH_MAX_HEAP and BENCH_IN_FLIGHT change the defaults of -MaxHeap and -InFlight)
+MODULE=fabric-2612 bash scripts/bench-cps.sh -Status NOISE -RadiusChunks 45
+# Digests against serial vanilla with the GPU off and every CPU-side change on ("CPU only", not GPU evidence)
+# (the 26.1.2 runs recorded in docs/evidence/minecraft-26.1.2.md; ScalableLux in build/test-mods/fabric-2612/vanilla)
+MODULE=fabric-2612 MODS_ROOT=build/test-mods/fabric-2612 PREFIX=f2612- CPU_ONLY=1 STATUS=SURFACE \
+  ROWS="vanilla-overworld vanilla-nether vanilla-end" bash scripts/verify-fast-matrix.sh 45
+MODULE=fabric-2612 CPU_ONLY=1 STATUS=FULL bash scripts/verify-save-reopen.sh 45 fabric-2612/vanilla
+# The same rows with the GPU (forced) generating, on a Mac with the emulated kernels
+MODULE=fabric-2612 MODS_ROOT=build/test-mods/fabric-2612 PREFIX=f2612gpu- STATUS=SURFACE \
+  ROWS="vanilla-overworld vanilla-nether vanilla-end" bash scripts/verify-fast-matrix.sh 45
+# A Chunky pregeneration on an installed Fabric server: vanilla, tellurium, c2me or c2me-zfastnoise
+FABRIC_MC=26.1.2 bash scripts/compare-chunk-mods-fabric.sh tellurium 1000
+```
+
+`verify-fast-matrix.sh` and `verify-save-reopen.sh` run without PowerShell.
+
 ```sh
 # One FULL benchmark run (label, extra -D properties, mods folder, radius, warm-up radius)
 bash scripts/bench-full.sh myrun "" build/test-mods/vanilla 90 40
@@ -37,29 +57,28 @@ qualification evidence. Start with [Plan.md](../Plan.md),
 
 ## Build and test
 
-Use JDK21, including for the Gradle launcher. The wrapper downloads pinned Gradle8.14.2 with checksum verification; initial dependency downloads require internet access.
+Run Gradle on JDK 25 and have a JDK 21 installed as well: the pure modules and the 1.21.x targets compile with a Java 21 toolchain, and the 26.1.2 target needs Java 25. The wrapper downloads pinned Gradle 9.4.0 with checksum verification; initial dependency downloads require internet access. Fabric Loom is 1.15.5 (plugin `net.fabricmc.fabric-loom` for 26.1, the non-remapping one; `net.fabricmc.fabric-loom-remap` for 1.21.x) and ModDevGradle 2.0.148. CI installs JDK 21 and 25.
+
+```sh
+# macOS or Linux, with JAVA_HOME pointing to JDK 25 (and a JDK 21 installed)
+JAVA_HOME=<JDK 25 home> bash ./gradlew test build verifyArchitecture testReport --no-daemon
+python3 scripts/summarize-tests.py
+```
 
 ```powershell
-# Windows: discover an installed JDK21, then build and test
-.\scripts\check.ps1
-
-# Or select it explicitly
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot'
+# Windows: select JDK 25 explicitly (a JDK 21 must also be installed)
+$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\<jdk-25 folder>'
 .\gradlew.bat test build verifyArchitecture testReport --no-daemon
 python scripts/summarize-tests.py
 ```
 
-```sh
-# Linux, with JAVA_HOME pointing to JDK21
-bash ./gradlew test build verifyArchitecture testReport --no-daemon
-python3 scripts/summarize-tests.py
-```
+`scripts\check.ps1` finds a JDK 25 (Eclipse Adoptium) for the Gradle launcher, or takes `-JavaHome`.
 
 The default suite does not require a GPU or launch Minecraft. Aggregate HTML: `build/reports/tests/all/index.html`. Every module retains its own JUnit XML and HTML reports. Python is needed only for the convenience summary script.
 
 ## Run the staged-route diagnostics
 
-With JDK21 selected, run these from the repository root:
+With JDK 25 selected (and a JDK 21 installed), run these from the repository root:
 
 ```powershell
 # Deterministic CPU replay with a counted JSON report
@@ -118,9 +137,10 @@ The mod jars of every build are in `build/release/` after `gradlew build` (for N
 | chunk-engine | Unique work/subscriptions, atomic resource admission, backend receipts and authoritative commit seam |
 | frontend-mc1211 | Pure captured-node/router/snapshot lowering with explicit unsupported diagnostics |
 | runtime-vulkan | Persistent service lifecycle, disjoint leases, visibility, pipeline and quarantine models |
+| runtime-metal | Native Metal backend for macOS (`java.lang.foreign`, Java 25); bundled only by targets with `macos: true` (26.1.2). See [Minecraft 26.1.2](evidence/minecraft-26.1.2.md) |
 | oracle-and-replay | Isolated corpus API, field-by-field comparator, failure bundles and endpoint baseline contracts |
 | oracle-1211 | Independent original-only NeoForge/Minecraft capture process; no Tellurium candidate dependency |
-| mod | The mod itself, one source tree for every Minecraft version and loader: `common` (written for 1.21.1), `loader/neoforge` and `loader/fabric`, `versions/<version>` for what later versions need differently, and the table of builds in `targets.gradle`. Each build is a Gradle project named after its loader and version (`neoforge-1211`, `fabric-1211`, `fabric-1214`, `fabric-1218`, `neoforge-1218`, `fabric-12111`, `neoforge-12111`). See [mod/README.md](mod/README.md) |
+| mod | The mod itself, one source tree for every Minecraft version and loader: `common` (written for 1.21.1), `loader/neoforge` and `loader/fabric`, `versions/<version>` for what later versions need differently, and the table of builds in `targets.gradle`. Each build is a Gradle project named after its loader and version (`neoforge-1211`, `fabric-1211`, `fabric-1214`, `fabric-1218`, `neoforge-1218`, `fabric-12111`, `neoforge-12111`, `fabric-2612`). See [mod/README.md](mod/README.md) |
 
 See the module READMEs for runnable diagnostics and detailed API limits. [docs/CONTRACTS.md](CONTRACTS.md) fixes the shared boundaries for contributors.
 
