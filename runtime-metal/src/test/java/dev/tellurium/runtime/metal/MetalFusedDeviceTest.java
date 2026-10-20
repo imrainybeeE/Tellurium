@@ -193,6 +193,14 @@ class MetalFusedDeviceTest {
         assertEquals(java.nio.ByteOrder.LITTLE_ENDIAN, slot.blocks().order());
     }
 
+    @Test void theEntryPointOfTheIsolatedRuntimeOpensTheMetalBackendOnAMac() {
+        assertNull(System.getProperty("tellurium.fast.backend"), "the test JVM does not ask for Vulkan");
+        try (FusedGpuBackend opened = dev.tellurium.runtime.vulkan.fused.FusedNoiseDevice.openIsolated(null)) {
+            assertInstanceOf(MetalFusedDevice.class, opened);
+            assertEquals(NumericProfile.GPU_IEEE_BITS, opened.numericProfile());
+        }
+    }
+
     private void await(FusedGpuBackend.Slot slot) throws InterruptedException {
         long deadline = System.nanoTime() + 20_000_000_000L;
         while (!slot.poll()) {
