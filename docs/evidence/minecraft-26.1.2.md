@@ -182,3 +182,21 @@ A larger Apple GPU may do better; that was not measured.
   real routers. The emulated dialect follows Java.
 
 ## In-game test (Remarkably Optimized)
+
+2026-10-20, on the M3: a copy of the user's Prism instance "Remarkably Optimized" (Minecraft 26.1.2, Fabric
+Loader 0.19.5, Fabric API 0.155.3+26.1.2, Java 25; about 130 mods including ModernFix, Debugify,
+structure_layout_optimizer, Lithium, ScalableLux, Iris and Distant Horizons 3.3.3), with C2ME and zfastnoise
+disabled in the copy only and the 26.1.2 jar of this branch added. Singleplayer world `TelluriumTest` (seed 0,
+made on a dedicated server first) with a datapack whose load function runs `tellurium pregen start 40`; default
+settings (`gpu.mode = "auto"`).
+
+| Check | Result |
+| --- | --- |
+| The mod loads beside the pack | Yes: "Tellurium 0.2.0-alpha.1 loaded (GPU mode auto ...)"; no mixin failure, and no warning or error from Tellurium in the log. The pack's own mixin warnings (JEI, Swinging Lanterns, ModernFix overwrite conflicts) are there with or without Tellurium |
+| GPU decision | "GPU terrain generation on Apple M3 (mode auto)", "GPU arithmetic: emulated in integers, no fp64 on this GPU", then for each dimension "generates with vanilla code: on Apple GPUs auto mode keeps terrain on the CPU: ..." with the measured reason |
+| Distant Horizons | The bridge attached in all three dimensions ("Distant Horizons' chunk generation for minecraft:overworld goes through the server's chunk system ...") |
+| Pregeneration | "Pregeneration finished: 6,561 chunks in 2 min (53 chunks/s)", with the client rendering, Distant Horizons running and a player in the world |
+| Errors | 4 error lines, all network calls (Realms feature flags, profile key pair, user properties, Realms); the same count as the instance's own log before Tellurium was added |
+
+Not exercised: `/tellurium status` typed in chat (the same reason text is what it shows), the GPU in `force` or
+`check` mode inside the client, and a long session.
