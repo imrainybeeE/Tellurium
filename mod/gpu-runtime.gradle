@@ -1,4 +1,4 @@
-// Applied by each loader's module: nests the Vulkan runtime and LWJGL in the mod jar.
+// Applied by each loader's module: nests the Vulkan runtime (and, for macos targets, the Metal one) and LWJGL in the mod jar.
 // ---- Bundled GPU runtime -------------------------------------------------
 // The Vulkan runtime and its LWJGL bindings/natives are nested as plain jars
 // (not jar-in-jar modules) and loaded by GpuRuntimeLoader in an isolated class
@@ -9,7 +9,7 @@
 // loader is child-first for classes only: LWJGL looks its native libraries up as resources, parent first, so
 // on a client the game's copy of a library can be the one found, and it has to match the bundled Java side.
 // A target with macos: true also carries the macOS arm64 natives (lwjgl-vulkan's holds MoltenVK, the Vulkan
-// implementation there) and SPIRV-Cross; on Windows and Linux the system's Vulkan loader is used.
+// implementation there), SPIRV-Cross and the runtime-metal jar; on Windows and Linux the system's Vulkan loader is used.
 def gpuTarget = gradle.ext.modTargets[project.name]
 def lwjgl = gpuTarget.lwjgl ?: '3.3.3'
 configurations { gpuRuntime { transitive = false } }
@@ -36,6 +36,13 @@ tasks.register('stageGpuRuntime', Sync) {
     dependsOn runtimeJar
     from(configurations.gpuRuntime)
     from(runtimeJar)
+    // A target with macos: true also carries the native Metal backend (runtime-metal, built for Java 25 like the game it
+    // is bundled with); FusedNoiseDevice.openIsolated runs it on macOS instead of MoltenVK.
+    if (gpuTarget.macos) {
+        def metalJar = project(':runtime-metal').tasks.named('jar')
+        dependsOn metalJar
+        from(metalJar)
+    }
     into gpuRuntimeDir.map { it.dir('META-INF/tellurium-gpu') }
     doLast {
         def directory = gpuRuntimeDir.get().dir('META-INF/tellurium-gpu').asFile
