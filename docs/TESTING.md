@@ -10,7 +10,7 @@ The v0.1 commands and evidence remain regression coverage. The 0.2.0 checkpoint 
 
 ## Commands
 
-Run Gradle on JDK21. The repository wrapper pins Gradle8.14.2.
+Run Gradle on JDK 25, with a JDK 21 installed as well (the pure modules and the 1.21.x builds compile with a Java 21 toolchain). The repository wrapper pins Gradle 9.4.0.
 
 ```powershell
 $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot'

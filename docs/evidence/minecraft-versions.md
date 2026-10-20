@@ -216,7 +216,7 @@ rows again.
 Ported for 1.21.11 on both loaders after this document was written: see
 `docs/evidence/minecraft-1.21.11.md`. What stood here (world generation
 changed in 1.21.9; a newer Fabric Loom is needed) is described there with what
-was done about it. Fabric Loom 1.13.6 turned out to run on Gradle 8.14.
+was done about it. Fabric Loom 1.13.6 turned out to run on Gradle 8.14; since the 26.1.2 port the build runs Gradle 9.4.0 with Loom 1.15.5 (see `docs/evidence/minecraft-26.1.2.md`).
 
 ## 26.1 and later
 

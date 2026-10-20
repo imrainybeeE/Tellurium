@@ -12,6 +12,7 @@ MODULES = {
         "chunk-engine": "Bounded coordinator, routing and commit models",
         "frontend-mc1211": "Typed captured Minecraft lowering boundary",
         "runtime-vulkan": "Persistent Vulkan lifecycle and opt-in native compute",
+        "runtime-metal": "Native Metal backend for the emulated kernels on Apple GPUs",
         "oracle-and-replay": "Corpus comparator, counted replay and result artifacts",
     "mod": "The mod: common source, per-loader and per-Minecraft-version files, and the builds of each",
 }

@@ -125,7 +125,7 @@ SPIRV-Cross. An older SPIRV-Cross writes signed modulo as Metal's `%` and is ref
 
 | Check | Result |
 | --- | --- |
-| Check mode (`gpu.mode = "check"`: vanilla generates, the GPU result is compared block by block) | 178 of 178 chunks, 0 differences, in the Overworld, the Nether and the End |
+| Check mode (`gpu.mode = "check"`: vanilla generates, the GPU result is compared block by block) | 178 of 178 chunks with 0 differences in each dimension: the Overworld, the Nether and the End |
 | SURFACE digest matrix, 8,281 chunks per dimension, the GPU generating every chunk and its surface, 0 bail-outs | 3 of 3 PASS |
 | The same matrix, run again after the speed work below | 3 of 3 PASS |
 
