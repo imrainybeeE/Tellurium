@@ -408,6 +408,11 @@ public final class FastNoiseEngine {
         } else {
             LOG.debug("Fast GPU NOISE {}: kernel structure {} (qualified as {})", dimension, compiled.structureFingerprint(), qualifiedAs);
         }
+        if (qualifiedAs == null && MODE == GpuMode.AUTO && GpuNumerics.autoReason(qualified) != null) {
+            report(dimension, false, false, "vanilla generation: " + GpuNumerics.autoReason(qualified));
+            LOG.info("{} generates with vanilla code: {}", dimension, GpuNumerics.autoReason(qualified));
+            return null;
+        }
         if (qualifiedAs == null && MODE == GpuMode.AUTO) {
             report(dimension, false, false, "vanilla generation: this world generator (datapack or mod combination) is not on the tested list;"
                     + " set gpu.mode = \"check\" in config/tellurium.toml to compare the GPU with vanilla on this world");

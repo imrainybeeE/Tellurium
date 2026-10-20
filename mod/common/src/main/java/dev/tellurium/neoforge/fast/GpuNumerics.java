@@ -43,6 +43,18 @@ final class GpuNumerics {
     }
 
     /**
+     * A list's measured reason for keeping its profile's GPU path out of auto mode ("auto.reason=..."), or null.  A list
+     * can be deliberately empty: the 26.1.2 list for the emulated profile is, because on the Apple GPU it was measured
+     * on that path is exact but slower than the CPU, and auto mode then says so instead of calling the generator untested.
+     */
+    static String autoReason(Map<String, String> list) {
+        String reason = list.get(AUTO_REASON);
+        return reason == null || reason.isBlank() ? null : reason.trim();
+    }
+
+    static final String AUTO_REASON = "auto.reason";
+
+    /**
      * How the GPU does arithmetic, in words for the status report.
      *
      * @param numeric the value of -Dtellurium.fast.numeric (null when unset); "ieee" is the one setting that makes

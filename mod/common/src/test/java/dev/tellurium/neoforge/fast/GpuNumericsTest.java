@@ -52,6 +52,20 @@ class GpuNumericsTest {
         assertEquals(Map.of(), GpuNumerics.parseQualified(list(A + "=x\nprofile=GPU_IEEE_BITS\n"), "26.1.2", NumericProfile.GPU_IEEE_BITS));
     }
 
+    @Test void aDeliberatelyEmptyListCarriesItsMeasuredReasonAndAdmitsNothing() throws IOException {
+        Map<String, String> loaded = GpuNumerics.parseQualified(list("minecraft=26.1.2\nprofile=GPU_IEEE_BITS\n"
+                + "auto.reason=  slower than the CPU here  \n"), "26.1.2", NumericProfile.GPU_IEEE_BITS);
+        assertEquals("slower than the CPU here", GpuNumerics.autoReason(loaded));
+        assertEquals(null, loaded.get(A), "the reason is not a fingerprint");
+        // The reason holds for its own version and profile only, like the list.
+        assertEquals(null, GpuNumerics.autoReason(GpuNumerics.parseQualified(list("minecraft=26.1.2\nprofile=GPU_IEEE_BITS\nauto.reason=x\n"),
+                "26.1.1", NumericProfile.GPU_IEEE_BITS)));
+        assertEquals(null, GpuNumerics.autoReason(GpuNumerics.parseQualified(list("minecraft=26.1.2\nprofile=GPU_IEEE_BITS\nauto.reason=x\n"),
+                "26.1.2", NumericProfile.NATIVE_QUALIFIED)));
+        assertEquals(null, GpuNumerics.autoReason(Map.of(GpuNumerics.AUTO_REASON, "  ")));
+        assertEquals(null, GpuNumerics.autoReason(Map.of()));
+    }
+
     @Test void theProfileKeyIsNeverAnEntry() throws IOException {
         Map<String, String> loaded = GpuNumerics.parseQualified(list("minecraft=26.1.2\nprofile=GPU_IEEE_BITS\n" + A + "=x\n" + B + "=y\n"),
                 "26.1.2", NumericProfile.GPU_IEEE_BITS);
@@ -122,15 +136,19 @@ class GpuNumericsTest {
         try (InputStream in = Files.newInputStream(file)) { properties.load(in); }
         assertEquals("26.1.2", properties.get("minecraft"));
         assertEquals("GPU_IEEE_BITS", properties.get("profile"));
-        // Whatever the matrix run adds later must be a kernel-structure or surface fingerprint with a name.
+        // Every other entry is a kernel-structure or surface fingerprint with a name, or the measured reason the
+        // list admits nothing in auto mode (it is deliberately empty: on the Apple M3 the path was slower than the CPU).
+        int fingerprints = 0;
         for (String key : properties.stringPropertyNames()) {
-            if (key.equals("minecraft") || key.equals("profile")) continue;
+            if (key.equals("minecraft") || key.equals("profile") || key.equals(GpuNumerics.AUTO_REASON)) continue;
             assertTrue(FINGERPRINT.matcher(key).matches(), "not a fingerprint: " + key);
             assertFalse(properties.getProperty(key).isBlank(), key);
+            fingerprints++;
         }
         try (InputStream in = Files.newInputStream(file)) {
             var loaded = GpuNumerics.parseQualified(in, "26.1.2", NumericProfile.GPU_IEEE_BITS);
             assertEquals(properties.size() - 2, loaded.size());
+            if (fingerprints == 0) assertNotNull(GpuNumerics.autoReason(loaded), "an empty list says why auto mode stays on the CPU");
         }
         // The native list of the same version never carries a profile of its own, so it cannot be mistaken for this one.
         Path nativeFile = repositoryFile("mod/versions/26.1.2/src/main/resources/tellurium/fused-qualified.properties");
