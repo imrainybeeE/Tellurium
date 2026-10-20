@@ -3,6 +3,7 @@ package dev.tellurium.runtime.vulkan.fused;
 
 import dev.tellurium.compiler.vulkan.fused.FusedNoiseCompiler;
 import dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract;
+import dev.tellurium.runtime.vulkan.fused.FusedDispatchPlan.SlotBuffer;
 import dev.tellurium.semantic.program.NumericProfile;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -27,22 +28,20 @@ import static org.lwjgl.vulkan.VK10.*;
  * lost: no buffer of an unproven submission is ever reused or freed.
  */
 public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fused.FusedGpuBackend {
-    static final int BINDINGS = 16;
-    private static final String[] KERNELS = {"K_COLUMN", "K_XZ", "K_CORNER", "K_PRELIM", "K_AQUIFER", "K_BLOCK", "K_HEIGHT",
-            "K_SURF_A", "K_SURF_B"};
-    private static final int KERNEL_HEIGHT = 6, KERNEL_SURF_A = 7, KERNEL_SURF_B = 8;
+    static final int BINDINGS = FusedDispatchPlan.BINDINGS;
+    private static final int KERNEL_COUNT = FusedDispatchPlan.KERNEL_COUNT;
     /** Diagnostic: keep intermediate buffers host-visible so they can be compared with a CPU reference. */
     public static final boolean DEBUG_BUFFERS = Boolean.getBoolean("tellurium.fast.debugBuffers");
     public static final boolean PROFILE = Boolean.getBoolean("tellurium.fast.profile");
     private static final boolean LOG_KERNELS = Boolean.getBoolean("tellurium.fast.logKernels");
-    private static final java.util.concurrent.atomic.AtomicLong[] PROFILE_NANOS = new java.util.concurrent.atomic.AtomicLong[KERNELS.length];
+    private static final java.util.concurrent.atomic.AtomicLong[] PROFILE_NANOS = new java.util.concurrent.atomic.AtomicLong[KERNEL_COUNT];
     private static final java.util.concurrent.atomic.AtomicLong PROFILE_CHUNKS = new java.util.concurrent.atomic.AtomicLong();
-    static { for (int i = 0; i < KERNELS.length; i++) PROFILE_NANOS[i] = new java.util.concurrent.atomic.AtomicLong(); }
+    static { for (int i = 0; i < KERNEL_COUNT; i++) PROFILE_NANOS[i] = new java.util.concurrent.atomic.AtomicLong(); }
 
     public static String summary() {
         long chunks = Math.max(1, PROFILE_CHUNKS.get());
         StringBuilder out = new StringBuilder("chunks=" + PROFILE_CHUNKS.get());
-        for (int i = 0; i < KERNELS.length; i++) out.append(' ').append(KERNELS[i]).append('=')
+        for (int i = 0; i < KERNEL_COUNT; i++) out.append(' ').append(FusedDispatchPlan.kernelName(i)).append('=')
                 .append(String.format(java.util.Locale.ROOT, "%.3f", PROFILE_NANOS[i].get() / 1e6 / chunks)).append("ms/chunk");
         return out.toString();
     }
@@ -70,14 +69,14 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     /** The queue is used by one thread at a time too (submissions, and waiting for it to drain at close). */
     private final Object queueLock = new Object();
     /** A submission whose fence has not signalled after this long is taken as never going to. */
-    static final long FENCE_TIMEOUT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(
+    public static final long FENCE_TIMEOUT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(
             Math.max(1, Long.getLong("tellurium.fast.fenceTimeoutSeconds", 60)));
     /** Developer fault injection: from this many submissions on, a fence is reported as never signalling. */
     private static final long STALL_AFTER = Long.getLong("tellurium.fast.stallFenceAfterSubmissions", 0);
     private final java.util.concurrent.atomic.AtomicLong submissions = new java.util.concurrent.atomic.AtomicLong();
 
     /** Whether a fence that has been pending since {@code submittedNanos} has run out of time. */
-    static boolean overdue(long submittedNanos, long nowNanos, long timeoutNanos) {
+    public static boolean overdue(long submittedNanos, long nowNanos, long timeoutNanos) {
         return nowNanos - submittedNanos >= timeoutNanos;
     }
 
@@ -115,7 +114,46 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         // size can be set here instead of requiring a JVM flag (the default 64 KiB is
         // too small for the descriptor and pipeline setup).  Value is in KiB.
         org.lwjgl.system.Configuration.STACK_SIZE.set(16384);
-        return open();
+        var metal = openMetal();
+        return metal != null ? metal : open();
+    }
+
+    /** The native Metal backend's class (runtime-metal), looked up by name: this module does not depend on it. */
+    static final String METAL_BACKEND_CLASS = "dev.tellurium.runtime.metal.MetalFusedDevice";
+    /** System property choosing the backend on macOS: unset or anything but "vulkan" is the native Metal one, "vulkan" is MoltenVK. */
+    static final String BACKEND_PROPERTY = "tellurium.fast.backend";
+
+    /**
+     * Whether {@code openIsolated} runs the native Metal backend: on macOS, when the runtime carries it and the
+     * backend property does not ask for Vulkan.
+     */
+    static boolean wantsMetal(String osName, boolean metalPresent, String backendProperty) {
+        return osName != null && osName.toLowerCase(java.util.Locale.ROOT).startsWith("mac") && metalPresent
+                && !"vulkan".equalsIgnoreCase(backendProperty == null ? "" : backendProperty.trim());
+    }
+
+    /**
+     * The Metal backend, or null when it is not to be used.  When it is wanted and fails to open the failure is
+     * thrown, with its reason: falling back to MoltenVK would run the same kernels at a fraction of the speed without
+     * anyone seeing why.
+     */
+    private static dev.tellurium.compiler.vulkan.fused.FusedGpuBackend openMetal() {
+        Class<?> metal;
+        try {
+            metal = Class.forName(METAL_BACKEND_CLASS, true, FusedNoiseDevice.class.getClassLoader());
+        } catch (ClassNotFoundException absent) {
+            metal = null;
+        }
+        if (!wantsMetal(System.getProperty("os.name"), metal != null, System.getProperty(BACKEND_PROPERTY))) return null;
+        try {
+            return (dev.tellurium.compiler.vulkan.fused.FusedGpuBackend) metal.getMethod("open").invoke(null);
+        } catch (java.lang.reflect.InvocationTargetException failure) {
+            Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+            throw new IllegalStateException("The Metal backend could not be opened (-D" + BACKEND_PROPERTY
+                    + "=vulkan runs the MoltenVK one instead): " + cause, cause);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("The Metal backend is present but unusable: " + failure, failure);
+        }
     }
     /** Raw device handle for developer probes in this package. */
     VkDevice vkDevice() { return device; }
@@ -183,7 +221,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     }
 
     /** A program of the other dialect would run the wrong arithmetic (or fail on a missing feature): refuse it. */
-    static void requireDialect(NumericProfile deviceProfile, FusedNoiseCompiler.Dialect dialect) {
+    public static void requireDialect(NumericProfile deviceProfile, FusedNoiseCompiler.Dialect dialect) {
         if (dialect.profile() != deviceProfile) {
             throw new IllegalArgumentException("Kernels compiled for the " + dialect + " dialect (" + dialect.profile()
                     + ") cannot run on a device with the " + deviceProfile + " numeric profile");
@@ -191,7 +229,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     }
 
     /** The emulated dialect has no floating-point type in its kernels; shaderc must not have introduced one. */
-    static void requireNoFloatTypes(byte[] spirv, String kernel) {
+    public static void requireNoFloatTypes(byte[] spirv, String kernel) {
         try {
             SpirvNumericContract.requireSpirv(spirv, NumericProfile.GPU_IEEE_BITS);
         } catch (IllegalArgumentException failure) {
@@ -334,7 +372,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         final ByteBuffer mapped;
 
         Buffer(long size, boolean hostVisible) {
-            this.size = Math.max(16, (size + 15) & ~15L);
+            this.size = FusedDispatchPlan.allocationBytes(size);
             long createdBuffer = VK_NULL_HANDLE, createdMemory = VK_NULL_HANDLE;
             ByteBuffer view = null;
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -398,8 +436,8 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         // Zero or null until created, so that a program that could not be finished is taken apart by the same code as a whole one.
         private long descriptorSetLayout;
         private long pipelineLayout;
-        private final long[] pipelines = new long[KERNELS.length];
-        private final long[] modules = new long[KERNELS.length];
+        private final long[] pipelines = new long[KERNEL_COUNT];
+        private final long[] modules = new long[KERNEL_COUNT];
         private long descriptorPool;
         private Buffer permBuffer;
         private Buffer dtabBuffer;
@@ -439,17 +477,17 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 pipelineLayout = handle.get(0);
                 long pipelineCache = createPipelineCache(stack, compiled.fingerprint());
                 try {
-                for (int k = 0; k < KERNELS.length; k++) {
+                for (int k = 0; k < KERNEL_COUNT; k++) {
                     long kernelStart = System.nanoTime();
-                    byte[] spirv = compileGlsl(compiled.source(), KERNELS[k]);
-                    if (numericProfile == NumericProfile.GPU_IEEE_BITS) requireNoFloatTypes(spirv, KERNELS[k]);
+                    byte[] spirv = compileGlsl(compiled.source(), FusedDispatchPlan.kernelName(k));
+                    if (numericProfile == NumericProfile.GPU_IEEE_BITS) requireNoFloatTypes(spirv, FusedDispatchPlan.kernelName(k));
                     byte[] moduleCode = metalSource ? MetalKernelSource.moduleCode(spirv) : spirv;
                     long shadercNanos = System.nanoTime() - kernelStart;
                     ByteBuffer code = MemoryUtil.memAlloc(moduleCode.length);
                     try {
                         code.put(moduleCode).flip();
                         check(vkCreateShaderModule(device, VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle),
-                                "vkCreateShaderModule(" + KERNELS[k] + ")");
+                                "vkCreateShaderModule(" + FusedDispatchPlan.kernelName(k) + ")");
                     } finally {
                         MemoryUtil.memFree(code);
                     }
@@ -458,10 +496,10 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                             .stage(VK_SHADER_STAGE_COMPUTE_BIT).module(modules[k]).pName(stack.UTF8(metalSource ? MetalKernelSource.ENTRY_POINT : "main"));
                     var info = VkComputePipelineCreateInfo.calloc(1, stack);
                     info.get(0).sType$Default().stage(stage).layout(pipelineLayout);
-                    check(vkCreateComputePipelines(device, pipelineCache, info, null, handle), "vkCreateComputePipelines(" + KERNELS[k] + ")");
+                    check(vkCreateComputePipelines(device, pipelineCache, info, null, handle), "vkCreateComputePipelines(" + FusedDispatchPlan.kernelName(k) + ")");
                     pipelines[k] = handle.get(0);
                     // Build times per kernel, for whoever is working on them (-Dtellurium.fast.logKernels=true).
-                    if (LOG_KERNELS) System.out.println("[tellurium-fast] kernel " + KERNELS[k] + ": spirv " + spirv.length + " bytes, shaderc "
+                    if (LOG_KERNELS) System.out.println("[tellurium-fast] kernel " + FusedDispatchPlan.kernelName(k) + ": spirv " + spirv.length + " bytes, shaderc "
                             + shadercNanos / 1_000_000 + " ms, pipeline " + (System.nanoTime() - kernelStart - shadercNanos) / 1_000_000 + " ms");
                 }
                 savePipelineCache(pipelineCache, compiled.fingerprint());
@@ -474,9 +512,9 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                         .maxSets(slotCount).pPoolSizes(sizes), null, handle), "vkCreateDescriptorPool");
                 descriptorPool = handle.get(0);
             }
-            permBuffer = new Buffer((long) compiled.permTable().length * 4, true);
+            permBuffer = new Buffer(FusedDispatchPlan.permBytes(compiled), true);
             permBuffer.mapped.asIntBuffer().put(compiled.permTable());
-            dtabBuffer = new Buffer((long) compiled.doubleTable().length * 8, true);
+            dtabBuffer = new Buffer(FusedDispatchPlan.doubleTableBytes(compiled), true);
             dtabBuffer.mapped.asDoubleBuffer().put(compiled.doubleTable());
             for (int i = 0; i < slotCount; i++) slots[i] = new Slot();
         }
@@ -509,7 +547,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
             if (permBuffer != null) permBuffer.destroy();
             if (dtabBuffer != null) dtabBuffer.destroy();
             vkDestroyDescriptorPool(device, descriptorPool, null);
-            for (int k = 0; k < KERNELS.length; k++) {
+            for (int k = 0; k < KERNEL_COUNT; k++) {
                 vkDestroyPipeline(device, pipelines[k], null);
                 vkDestroyShaderModule(device, modules[k], null);
             }
@@ -533,8 +571,8 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
             public final int beardCapacityInts;
 
             Slot() {
-                beardCapacityInts = maxBatchChunks * 2048;
-                prelimCapacity = maxBatchChunks * 961;
+                beardCapacityInts = (int) FusedDispatchPlan.beardCapacityInts(maxBatchChunks);
+                prelimCapacity = FusedDispatchPlan.prelimCapacity(maxBatchChunks);
                 try {
                     build();
                 } catch (Throwable failure) {
@@ -544,31 +582,44 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
             }
 
             private void build() {
-                var g = compiled.geometry();
-                int n = maxBatchChunks;
-                chunks = new Buffer((long) n * CHUNK_INFO_INTS * 4, true);
-                columns = new Buffer((long) n * Math.max(1, compiled.flatChannels()) * g.columnCount() * 8, DEBUG_BUFFERS);
-                corners = new Buffer((long) n * Math.max(1, compiled.interpolatedChannels()) * g.cornerCount() * 8, DEBUG_BUFFERS);
-                aquifer = new Buffer((long) n * g.aquiferCellCount() * 8 * 4, false);
-                blocks = new Buffer((long) n * g.blockCount(), false);
-                blocksHost = new Buffer((long) n * g.blockCount(), true);
-                aquiferHost = new Buffer((long) n * g.aquiferCellCount() * 8 * 4, true);
-                biomes = new Buffer((long) n * compiled.biomeWordsPerChunk() * 4, true);
-                surfTmp = new Buffer((long) n * 256 * 4, false);
-                beard = new Buffer((long) beardCapacityInts * 4, true);
-                flags = new Buffer((long) n * 4, true);
-                heights = new Buffer((long) n * 2 * 256 * 4, true);
-                prelimIndex = new Buffer((long) prelimCapacity * 4, true);
-                prelimCols = new Buffer((long) prelimCapacity * 8, true);
-                prelimOut = new Buffer((long) prelimCapacity * 4, false);
-                xzcache = new Buffer((long) n * Math.max(1, compiled.xzChannels()) * 256 * 8, false);
+                chunks = slotBuffer(SlotBuffer.CHUNKS, true);
+                columns = slotBuffer(SlotBuffer.COLUMNS, DEBUG_BUFFERS);
+                corners = slotBuffer(SlotBuffer.CORNERS, DEBUG_BUFFERS);
+                aquifer = slotBuffer(SlotBuffer.AQUIFER, false);
+                blocks = slotBuffer(SlotBuffer.BLOCKS, false);
+                blocksHost = slotBuffer(SlotBuffer.BLOCKS, true);
+                aquiferHost = slotBuffer(SlotBuffer.AQUIFER, true);
+                biomes = slotBuffer(SlotBuffer.BIOMES, true);
+                surfTmp = slotBuffer(SlotBuffer.SURF_TMP, false);
+                beard = slotBuffer(SlotBuffer.BEARD, true);
+                flags = slotBuffer(SlotBuffer.FLAGS, true);
+                heights = slotBuffer(SlotBuffer.HEIGHTS, true);
+                prelimIndex = slotBuffer(SlotBuffer.PRELIM_INDEX, true);
+                prelimCols = slotBuffer(SlotBuffer.PRELIM_COLUMNS, true);
+                prelimOut = slotBuffer(SlotBuffer.PRELIM_OUT, false);
+                xzcache = slotBuffer(SlotBuffer.XZCACHE, false);
                 try (MemoryStack stack = MemoryStack.stackPush()) {
                     LongBuffer handle = stack.mallocLong(1);
                     check(vkAllocateDescriptorSets(device, VkDescriptorSetAllocateInfo.calloc(stack).sType$Default()
                             .descriptorPool(descriptorPool).pSetLayouts(stack.longs(descriptorSetLayout)), handle), "vkAllocateDescriptorSets");
                     descriptorSet = handle.get(0);
-                    Buffer[] bound = {chunks, permBuffer, dtabBuffer, columns, corners, aquifer, blocks, beard, flags, heights, xzcache,
-                            prelimIndex, prelimCols, prelimOut, biomes, surfTmp};
+                    Buffer[] bound = new Buffer[BINDINGS];
+                    bound[FusedDispatchPlan.PERM_BINDING] = permBuffer;
+                    bound[FusedDispatchPlan.DTAB_BINDING] = dtabBuffer;
+                    bound[SlotBuffer.CHUNKS.binding()] = chunks;
+                    bound[SlotBuffer.COLUMNS.binding()] = columns;
+                    bound[SlotBuffer.CORNERS.binding()] = corners;
+                    bound[SlotBuffer.AQUIFER.binding()] = aquifer;
+                    bound[SlotBuffer.BLOCKS.binding()] = blocks;
+                    bound[SlotBuffer.BEARD.binding()] = beard;
+                    bound[SlotBuffer.FLAGS.binding()] = flags;
+                    bound[SlotBuffer.HEIGHTS.binding()] = heights;
+                    bound[SlotBuffer.XZCACHE.binding()] = xzcache;
+                    bound[SlotBuffer.PRELIM_INDEX.binding()] = prelimIndex;
+                    bound[SlotBuffer.PRELIM_COLUMNS.binding()] = prelimCols;
+                    bound[SlotBuffer.PRELIM_OUT.binding()] = prelimOut;
+                    bound[SlotBuffer.BIOMES.binding()] = biomes;
+                    bound[SlotBuffer.SURF_TMP.binding()] = surfTmp;
                     var infos = VkDescriptorBufferInfo.calloc(BINDINGS, stack);
                     var writes = VkWriteDescriptorSet.calloc(BINDINGS, stack);
                     for (int i = 0; i < BINDINGS; i++) {
@@ -590,6 +641,10 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 }
             }
 
+            private Buffer slotBuffer(SlotBuffer which, boolean hostVisible) {
+                return new Buffer(which.size(compiled, maxBatchChunks), hostVisible);
+            }
+
             public boolean pending() { return pending; }
             public int pendingChunks() { return pendingChunks; }
             public ByteBuffer chunkInfo() { return chunks.mapped; }
@@ -608,17 +663,9 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 if (pending) throw new IllegalStateException("Slot is still in flight");
                 if (lost) throw new IllegalStateException("Fused NOISE device is lost: " + lostReason);
                 if (count <= 0 || count > maxBatchChunks) throw new IllegalArgumentException("Invalid batch size " + count);
-                var g = compiled.geometry();
                 for (int i = 0; i < count; i++) flags.mapped.putInt(i * 4, 0);
-                long[] threads = {(long) count * g.columnCount(),
-                        compiled.xzChannels() > 0 ? (long) count * 256 : 0L, (long) count * g.cornerCount(),
-                        (long) prelimCount,
-                        compiledAquifers() ? (long) count * g.aquiferCellCount() : 0L,
-                        (long) count * 64 * g.storageHeight(), (long) count * 256,
-                        surface ? (long) count * 64 : 0L, surface ? (long) count * 64 : 0L};
-                // Dispatch order; the surface kernels rewrite blocks, so heightmaps are recomputed after them.
-                int[] order = surface ? new int[]{0, 1, 2, 3, 4, 5, KERNEL_HEIGHT, KERNEL_SURF_A, KERNEL_SURF_B, KERNEL_HEIGHT}
-                        : new int[]{0, 1, 2, 3, 4, 5, KERNEL_HEIGHT};
+                long[] threads = FusedDispatchPlan.threads(compiled, count, prelimCount, surface);
+                int[] order = FusedDispatchPlan.order(surface);
                 if (PROFILE) {
                     // Diagnostic: one fenced submission per kernel so each kernel's wall time is visible.
                     for (int step = 0; step < order.length; step++) {
@@ -697,7 +744,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
 
             private void dispatch(MemoryStack stack, int kernel, long threads) {
                 vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[kernel]);
-                long groups = (threads + 63) / 64;
+                long groups = FusedDispatchPlan.groups(threads);
                 if (groups > 65535L * 65535L) throw new IllegalStateException("Dispatch too large");
                 // A Metal-source module carries no SPIR-V for MoltenVK to read local_size_x = 64 from, so MoltenVK runs
                 // it with one thread per threadgroup: dispatch one group per invocation.  Correct (the kernels use only
@@ -760,7 +807,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         }
 
         private boolean compiledAquifers() {
-            return compiled.source().contains("const bool AQUIFERS = true;");
+            return FusedDispatchPlan.aquifers(compiled);
         }
 
     }
@@ -820,7 +867,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         }
     }
 
-    static byte[] compileGlsl(String source, String kernel) {
+    public static byte[] compileGlsl(String source, String kernel) {
         long compiler = shaderc_compiler_initialize();
         if (compiler == 0) throw new IllegalStateException("shaderc initialization failed");
         long options = shaderc_compile_options_initialize();

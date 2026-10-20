@@ -32,12 +32,15 @@ import static org.lwjgl.util.spvc.Spvc.*;
  * instance turns MoltenVK's argument buffers off for this ({@link #ARGUMENT_BUFFERS_SETTING}): a kernel handed
  * over as Metal source carries no reflection data, and through an argument buffer MoltenVK then never made the
  * kernel's buffers resident, so every kernel read zeros and wrote nothing (seen on an Apple M3).</p>
+ *
+ * <p>The native Metal backend (runtime-metal) compiles the same source with the same layout, and dispatches it with the
+ * 64-thread groups the kernels declare.</p>
  */
-final class MetalKernelSource {
+public final class MetalKernelSource {
     /** MoltenVK's marker for a shader module whose code is Metal source text instead of SPIR-V. */
     static final int MSL_SOURCE_MAGIC = 0x19960412;
     /** SPIRV-Cross names the entry point main0 ("main" is not a legal Metal function name). */
-    static final String ENTRY_POINT = "main0";
+    public static final String ENTRY_POINT = "main0";
     static final int PUSH_CONSTANT_BUFFER_INDEX = 0;
     /** The MoltenVK setting (VK_EXT_layer_settings, layer "MoltenVK") that this layout needs at 0: never. */
     static final String ARGUMENT_BUFFERS_SETTING = "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS";
@@ -52,7 +55,7 @@ final class MetalKernelSource {
      * 3.4.1 ships it; an older SPIRV-Cross (LWJGL 3.3.3's) writes the kernels' signed modulo as Metal's %, which
      * differs for negative operands, so it is refused rather than trusted.
      */
-    static String unsupportedReason() {
+    public static String unsupportedReason() {
         // Read at run time: Version's int fields are compile-time constants, fixed to the LWJGL compiled against.
         String running = org.lwjgl.Version.getVersion();
         java.util.regex.Matcher number = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)").matcher(running);
@@ -76,7 +79,7 @@ final class MetalKernelSource {
     }
 
     /** The kernel as MoltenVK would write it in Metal, with the integer helpers left as calls. */
-    static String msl(byte[] spirv) {
+    public static String msl(byte[] spirv) {
         return callHelpers(convert(spirv));
     }
 

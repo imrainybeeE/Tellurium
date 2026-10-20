@@ -172,4 +172,16 @@ class FusedNoiseDeviceProfileTest {
         assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.requireNoFloatTypes(new byte[0], "K_XZ"));
         assertThrows(IllegalStateException.class, () -> FusedNoiseDevice.requireNoFloatTypes(module((9 << 16) | 21, 1), "K_XZ"));
     }
+
+    @Test void metalIsTheBackendOnAMacWhenTheRuntimeCarriesItUnlessVulkanIsAsked() {
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, null));
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, ""));
+        assertTrue(FusedNoiseDevice.wantsMetal("Mac OS X", true, "metal"));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", true, "vulkan"));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", true, " Vulkan "));
+        assertFalse(FusedNoiseDevice.wantsMetal("Mac OS X", false, null), "a runtime without the Metal backend uses Vulkan");
+        assertFalse(FusedNoiseDevice.wantsMetal("Windows 11", true, null));
+        assertFalse(FusedNoiseDevice.wantsMetal("Linux", true, null));
+        assertFalse(FusedNoiseDevice.wantsMetal(null, true, null));
+    }
 }
