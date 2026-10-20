@@ -45,17 +45,19 @@ tasks.register('nativeIntegerIeeeCompile', JavaExec) {
 
 tasks.register('nativeIntegerIeee', JavaExec) {
     group = 'verification'
-    description = 'Opt-in real-device integer-carrier arithmetic conformance (-Ptellurium.ieeeFused=true: the fused-kernel helpers instead; -Ptellurium.ieeeFusedLib=true: the fused library functions instead); fails when no suitable Vulkan device exists.'
+    description = 'Opt-in real-device integer-carrier arithmetic conformance (-Ptellurium.ieeeFused=true: the fused-kernel helpers instead; -Ptellurium.ieeeFusedLib=true: the fused library functions instead; -Ptellurium.ieeeFast=true: the fast wgx_ add/sub/mul helpers instead); fails when no suitable Vulkan device exists.'
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
     jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
     mainClass = 'dev.tellurium.runtime.vulkan.NativeIntegerIeeeRunner'
     def fusedIeee = providers.gradleProperty('tellurium.ieeeFused').map { it == 'true' }.orElse(false).get()
     def fusedLib = providers.gradleProperty('tellurium.ieeeFusedLib').map { it == 'true' }.orElse(false).get()
-    def reportName = fusedLib ? 'reports/native-integer-ieee-fused-lib.json' : (fusedIeee ? 'reports/native-integer-ieee-fused.json' : 'reports/native-integer-ieee.json')
+    def fastIeee = providers.gradleProperty('tellurium.ieeeFast').map { it == 'true' }.orElse(false).get()
+    def reportName = fastIeee ? 'reports/native-integer-ieee-fast.json' : (fusedLib ? 'reports/native-integer-ieee-fused-lib.json' : (fusedIeee ? 'reports/native-integer-ieee-fused.json' : 'reports/native-integer-ieee.json'))
     args "--output=${layout.buildDirectory.file(reportName).get().asFile.absolutePath}"
     if (fusedIeee) args '--fused-ieee'
     if (fusedLib) args '--fused-lib'
+    if (fastIeee) args '--fast-ieee'
     if (providers.gradleProperty('tellurium.ieeeRelease').map { it == 'true' }.orElse(false).get()) args '--release'
     if (providers.gradleProperty('tellurium.ieeeArithmeticOnly').map { it == 'true' }.orElse(false).get()) args '--arithmetic-only'
     if (providers.gradleProperty('tellurium.ieeeHostNanSignAgnostic').map { it == 'true' }.orElse(false).get()) args '--host-nan-sign-agnostic'

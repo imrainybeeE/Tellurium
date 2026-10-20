@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.runtime.vulkan;
 
+import dev.tellurium.compiler.vulkan.fused.FastIeeeHelpers;
 import dev.tellurium.compiler.vulkan.fused.FusedIeeeHelpers;
 import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
 import dev.tellurium.compiler.vulkan.worldgen.WorldgenShaderCompiler;
@@ -146,10 +147,13 @@ public final class NativeIntegerIeeeRunner {
     public static void main(String[] args) throws Exception {
         boolean fusedIeee = hasFlag(args, "--fused-ieee");
         boolean fusedLib = hasFlag(args, "--fused-lib");
-        if (fusedIeee && fusedLib) throw new IllegalArgumentException("--fused-ieee does not combine with --fused-lib");
-        if (fusedIeee || fusedLib) {
+        boolean fastIeee = hasFlag(args, "--fast-ieee");
+        if ((fusedIeee ? 1 : 0) + (fusedLib ? 1 : 0) + (fastIeee ? 1 : 0) > 1) {
+            throw new IllegalArgumentException("--fused-ieee, --fused-lib and --fast-ieee do not combine");
+        }
+        if (fusedIeee || fusedLib || fastIeee) {
             // The fused campaigns have their own shader, vectors and report; they do not combine with the other modes.
-            String mode = fusedLib ? "--fused-lib" : "--fused-ieee";
+            String mode = fastIeee ? "--fast-ieee" : fusedLib ? "--fused-lib" : "--fused-ieee";
             for (String other : List.of("--release", "--arithmetic-only", "--blended-only", "--blend-only", "--noise-only",
                     "--host-nan-sign-agnostic")) {
                 if (hasFlag(args, other)) throw new IllegalArgumentException(mode + " does not combine with " + other);
@@ -163,7 +167,12 @@ public final class NativeIntegerIeeeRunner {
         int unaryVectorCount = release ? 1_000_000 : 100_000;
         int rngVectorCount = release ? 1_000_000 : 100_000;
         try (Session session = new Session()) {
+            session.enableInt64 = fastIeee;
             session.selectAndOpen();
+            if (fastIeee) {
+                FastIeee.run(session, outputPath(args));
+                return;
+            }
             if (fusedIeee) {
                 FusedIeee.run(session, outputPath(args));
                 return;
@@ -1114,6 +1123,8 @@ public final class NativeIntegerIeeeRunner {
         private String name;
         private final List<VkPhysicalDevice> devices = new ArrayList<>();
         private final List<DeviceCapabilities> capabilities = new ArrayList<>();
+        /** Enables {@code shaderInt64} (the fast helpers use 64-bit integers); fails closed when the device lacks it. */
+        boolean enableInt64;
 
         Session() {
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1163,8 +1174,15 @@ public final class NativeIntegerIeeeRunner {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 var queues = org.lwjgl.vulkan.VkDeviceQueueCreateInfo.calloc(1, stack);
                 queues.get(0).sType$Default().queueFamilyIndex(queueFamily).pQueuePriorities(stack.floats(1.0f));
+                var enabledFeatures = VkPhysicalDeviceFeatures.calloc(stack);
+                if (enableInt64) {
+                    var supported = VkPhysicalDeviceFeatures.calloc(stack);
+                    VK10.vkGetPhysicalDeviceFeatures(physical, supported);
+                    if (!supported.shaderInt64()) throw new IllegalStateException("shaderInt64 not supported by " + name);
+                    enabledFeatures.shaderInt64(true);
+                }
                 var create = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues)
-                        .pEnabledFeatures(VkPhysicalDeviceFeatures.calloc(stack))
+                        .pEnabledFeatures(enabledFeatures)
                         .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(physical, stack));
                 PointerBuffer out = stack.mallocPointer(1);
                 check(vkCreateDevice(physical, create, null, out), "vkCreateDevice(integer profile)");
@@ -2121,6 +2139,303 @@ public final class NativeIntegerIeeeRunner {
                 };
             }
             return pairs;
+        }
+    }
+
+
+    /**
+     * Device conformance of the six {@code wgx_} helpers of {@link FastIeeeHelpers} against Java's {@code +},
+     * {@code -} and {@code *} (binary32 with {@code float}): the listed vectors on every pair, then at least
+     * {@link #RANDOM_INPUTS} seeded edge-weighted and raw random pairs per function. A non-NaN result must be
+     * bit-exact; a NaN result passes when Java's is NaN.
+     */
+    private static final class FastIeee {
+        private static final int RANDOM_INPUTS = 1_000_000;
+        private static final int CHUNK = 262_144;
+        private static final int INPUT_WORDS = 8;
+        private static final int OUTPUT_WORDS = 2;
+        private static final int MAX_REPORTED = 16;
+        private static final String[] NAMES = {"wgx_fp64_add", "wgx_fp64_sub", "wgx_fp64_mul", "wgx_fp32_add", "wgx_fp32_sub", "wgx_fp32_mul"};
+
+        private FastIeee() {}
+
+        /** A binary interchange format, so one generator serves both widths. */
+        private record Fmt(int fraction, int expMax, int bias) {
+            static final Fmt F64 = new Fmt(52, 2047, 1023);
+            static final Fmt F32 = new Fmt(23, 255, 127);
+            int width() { return fraction == 52 ? 64 : 32; }
+            long fractionMask() { return (1L << fraction) - 1L; }
+            long mask() { return width() == 64 ? -1L : 0xffffffffL; }
+            long make(long sign, long exponent, long bits) { return (sign << (width() - 1)) | (exponent << fraction) | (bits & fractionMask()); }
+            long negate(long bits) { return bits ^ (1L << (width() - 1)); }
+        }
+
+        private static long java(int operation, long a, long b) {
+            double da = Double.longBitsToDouble(a), db = Double.longBitsToDouble(b);
+            float fa = Float.intBitsToFloat((int) a), fb = Float.intBitsToFloat((int) b);
+            return switch (operation) {
+                case 0 -> Double.doubleToRawLongBits(da + db);
+                case 1 -> Double.doubleToRawLongBits(da - db);
+                case 2 -> Double.doubleToRawLongBits(da * db);
+                case 3 -> Float.floatToRawIntBits(fa + fb) & 0xffffffffL;
+                case 4 -> Float.floatToRawIntBits(fa - fb) & 0xffffffffL;
+                default -> Float.floatToRawIntBits(fa * fb) & 0xffffffffL;
+            };
+        }
+
+        static String shaderSource() {
+            return """
+                    #version 450
+                    #extension GL_ARB_gpu_shader_int64 : require
+                    layout(local_size_x=64, local_size_y=1, local_size_z=1) in;
+                    layout(std430, binding=0) readonly buffer Inputs { uint inputBits[]; };
+                    layout(std430, binding=1) writeonly buffer Outputs { uint outputBits[]; };
+                    layout(push_constant) uniform Dispatch { uint count; uint operation; } dispatch;
+                    """ + IntegerIeeeEmitter.helperSource(FastIeeeHelpers.HELPERS) + FastIeeeHelpers.source() + """
+                    void main() {
+                        uint index = gl_GlobalInvocationID.x;
+                        if (index >= dispatch.count) return;
+                        uint inputBase = index * 8u, outputBase = index * 2u;
+                        uvec2 a = uvec2(inputBits[inputBase], inputBits[inputBase + 1u]);
+                        uvec2 b = uvec2(inputBits[inputBase + 2u], inputBits[inputBase + 3u]);
+                        uint operation = dispatch.operation;
+                        uvec2 value = uvec2(0xffffffffu, 0xffffffffu);
+                        if (operation == 0u) value = wgx_fp64_add(a, b);
+                        else if (operation == 1u) value = wgx_fp64_sub(a, b);
+                        else if (operation == 2u) value = wgx_fp64_mul(a, b);
+                        else if (operation == 3u) value = uvec2(wgx_fp32_add(a.x, b.x), 0u);
+                        else if (operation == 4u) value = uvec2(wgx_fp32_sub(a.x, b.x), 0u);
+                        else if (operation == 5u) value = uvec2(wgx_fp32_mul(a.x, b.x), 0u);
+                        outputBits[outputBase] = value.x;
+                        outputBits[outputBase + 1u] = value.y;
+                    }
+                    """;
+        }
+
+        static void run(Session session, String output) throws java.io.IOException {
+            String source = shaderSource();
+            byte[] spirv = new ShadercCompiler().compile(source);
+            var inspection = new dev.tellurium.compiler.vulkan.worldgen.SpirvNumericContract()
+                    .inspectSpirv(spirv, NumericProfile.GPU_IEEE_BITS);
+            if (!inspection.valid()) {
+                throw new IllegalStateException("Fast IEEE conformance module violates GPU_IEEE_BITS: " + inspection.violations());
+            }
+            var random = new SplittableRandom(0x7e11a1c0fa57001L);
+            int[] counts = new int[NAMES.length];
+            var failures = new ArrayList<String>();
+            for (int operation = 0; operation < NAMES.length; operation++) {
+                Fmt f = operation < 3 ? Fmt.F64 : Fmt.F32;
+                boolean multiply = operation == 2 || operation == 5;
+                List<Long> listed = listed(f);
+                var pairs = new ArrayList<long[]>(listed.size() * listed.size() + RANDOM_INPUTS);
+                for (long a : listed) for (long b : listed) pairs.add(new long[] {a, b});
+                for (int i = 0; i < RANDOM_INPUTS; i++) {
+                    long[] pair = switch (i % 4) {
+                        case 0 -> new long[] {random.nextLong() & f.mask(), random.nextLong() & f.mask()};
+                        default -> multiply ? mulPair(f, random) : addPair(f, random);
+                    };
+                    pairs.add(pair);
+                }
+                counts[operation] = check(session, spirv, operation, pairs, failures);
+            }
+            if (!failures.isEmpty()) {
+                throw new IllegalStateException("fast IEEE campaign FAILED on device " + session.name() + ": "
+                        + failures.size() + " of " + NAMES.length + " functions disagree with Java\n" + String.join("\n", failures));
+            }
+            long comparisons = 0;
+            for (int count : counts) comparisons += count;
+            String sourceHash = Hashes.sha256(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String spirvHash = Hashes.sha256(spirv);
+            StringBuilder json = new StringBuilder("{\n")
+                    .append("  \"schemaVersion\": 1,\n")
+                    .append("  \"status\": \"PASS\",\n")
+                    .append("  \"campaign\": \"fast-ieee\",\n")
+                    .append("  \"profile\": \"GPU_IEEE_BITS\",\n")
+                    .append("  \"device\": \"").append(jsonEscape(session.name())).append("\",\n")
+                    .append("  \"sourceSha256\": \"").append(sourceHash).append("\",\n")
+                    .append("  \"spirvSha256\": \"").append(spirvHash).append("\",\n")
+                    .append("  \"comparisons\": ").append(comparisons).append(",\n")
+                    .append("  \"mismatches\": 0,\n")
+                    .append("  \"operations\": {");
+            for (int i = 0; i < NAMES.length; i++) {
+                if (i > 0) json.append(',');
+                json.append("\n    \"").append(NAMES[i]).append("\": ").append(counts[i]);
+            }
+            json.append("\n  }\n}\n");
+            if (output != null) {
+                Path reportPath = Path.of(output).toAbsolutePath().normalize();
+                Path parent = reportPath.getParent();
+                if (parent != null) Files.createDirectories(parent);
+                Files.writeString(reportPath, json.toString());
+            }
+            System.out.println("nativeIntegerIeee --fast-ieee DEVICE_PASS device=" + session.name()
+                    + " comparisons=" + comparisons + " mismatches=0 sourceSha256=" + sourceHash
+                    + (output == null ? "" : " report=" + Path.of(output).toAbsolutePath().normalize()));
+        }
+
+        private static int check(Session session, byte[] spirv, int operation, List<long[]> pairs, List<String> failures) {
+            int count = pairs.size();
+            int mismatches = 0;
+            var first = new StringBuilder();
+            for (int start = 0; start < count; start += CHUNK) {
+                int size = Math.min(CHUNK, count - start);
+                int[] input = new int[size * INPUT_WORDS];
+                for (int i = 0; i < size; i++) {
+                    long[] pair = pairs.get(start + i);
+                    input[i * INPUT_WORDS] = (int) pair[0];
+                    input[i * INPUT_WORDS + 1] = (int) (pair[0] >>> 32);
+                    input[i * INPUT_WORDS + 2] = (int) pair[1];
+                    input[i * INPUT_WORDS + 3] = (int) (pair[1] >>> 32);
+                }
+                int[] actual = session.dispatch(spirv, operation, input, size, OUTPUT_WORDS);
+                for (int i = 0; i < size; i++) {
+                    long[] pair = pairs.get(start + i);
+                    long expected = java(operation, pair[0], pair[1]);
+                    long actualBits = Integer.toUnsignedLong(actual[i * OUTPUT_WORDS])
+                            | (Integer.toUnsignedLong(actual[i * OUTPUT_WORDS + 1]) << 32);
+                    if (matches(operation < 3, expected, actualBits)) continue;
+                    mismatches++;
+                    if (mismatches <= MAX_REPORTED) {
+                        first.append("\n  index=").append(start + i).append(" a=0x").append(Long.toHexString(pair[0]))
+                                .append(" b=0x").append(Long.toHexString(pair[1]))
+                                .append(" expected=0x").append(Long.toHexString(expected))
+                                .append(" actual=0x").append(Long.toHexString(actualBits));
+                    }
+                }
+            }
+            if (mismatches != 0) {
+                failures.add(NAMES[operation] + ": " + mismatches + " of " + count + " mismatches (first "
+                        + Math.min(mismatches, MAX_REPORTED) + ")" + first);
+                return 0;
+            }
+            return count;
+        }
+
+        private static boolean matches(boolean wide, long expected, long actual) {
+            if (wide) {
+                return Double.isNaN(Double.longBitsToDouble(expected)) ? Double.isNaN(Double.longBitsToDouble(actual)) : expected == actual;
+            }
+            if ((actual >>> 32) != 0L) return false;
+            return Float.isNaN(Float.intBitsToFloat((int) expected))
+                    ? Float.isNaN(Float.intBitsToFloat((int) actual)) : (int) expected == (int) actual;
+        }
+
+        // ---- inputs ------------------------------------------------------------------------------------
+
+        private static List<Long> listed(Fmt f) {
+            var list = new ArrayList<Long>();
+            long maxFraction = f.fractionMask();
+            long[] exponents = {1, 2, 3, f.bias - f.fraction - 2, f.bias - f.fraction, f.bias - 2, f.bias - 1, f.bias, f.bias + 1,
+                    f.bias + 2, f.bias + f.fraction - 1, f.bias + f.fraction, f.bias + f.fraction + 1, f.expMax - 3, f.expMax - 2,
+                    f.expMax - 1};
+            long[] fractions = {0, 1, 2, 3, maxFraction, maxFraction - 1, 1L << (f.fraction - 1), (1L << (f.fraction - 1)) - 1,
+                    (1L << (f.fraction - 1)) + 1, maxFraction >>> 1, 0x5555555555555555L & maxFraction, 0x2aaaaaaaaaaaaaaaL & maxFraction};
+            for (int sign = 0; sign <= 1; sign++) {
+                list.add(f.make(sign, 0, 0));
+                list.add(f.make(sign, 0, 1));
+                list.add(f.make(sign, 0, 2));
+                list.add(f.make(sign, 0, maxFraction));
+                list.add(f.make(sign, 0, maxFraction - 1));
+                list.add(f.make(sign, 0, 1L << (f.fraction - 1)));
+                list.add(f.make(sign, f.expMax, 0));
+                list.add(f.make(sign, f.expMax, 1L << (f.fraction - 1)));
+                list.add(f.make(sign, f.expMax, 1));
+                list.add(f.make(sign, f.expMax, maxFraction));
+                for (long exponent : exponents) for (long fraction : fractions) list.add(f.make(sign, exponent, fraction));
+            }
+            return list;
+        }
+
+        private static long fraction(Fmt f, SplittableRandom r) {
+            return switch (r.nextInt(6)) {
+                case 0 -> 0L;
+                case 1 -> f.fractionMask();
+                case 2 -> r.nextLong() & f.fractionMask() & (f.fractionMask() << r.nextInt(f.fraction));
+                case 3 -> (r.nextLong() & f.fractionMask()) >>> r.nextInt(f.fraction);
+                case 4 -> (r.nextBoolean() ? 1L : f.fractionMask()) ^ (1L << r.nextInt(f.fraction));
+                default -> r.nextLong() & f.fractionMask();
+            };
+        }
+
+        private static long edge(Fmt f, SplittableRandom r) {
+            long sign = r.nextBoolean() ? 1 : 0;
+            return switch (r.nextInt(10)) {
+                case 0 -> r.nextLong() & f.mask();
+                case 1 -> f.make(sign, 0, fraction(f, r));
+                case 2 -> f.make(sign, f.expMax, r.nextInt(3) == 0 ? 0 : fraction(f, r));
+                case 3 -> f.make(sign, 1 + r.nextInt(3), fraction(f, r));
+                case 4 -> f.make(sign, f.expMax - 1 - r.nextInt(3), fraction(f, r));
+                case 5 -> f.make(sign, f.bias + r.nextInt(7) - 3, fraction(f, r));
+                default -> f.make(sign, 1 + r.nextInt(f.expMax - 1), fraction(f, r));
+            };
+        }
+
+        private static long[] addPair(Fmt f, SplittableRandom r) {
+            long a = edge(f, r);
+            long exponent = (a >>> f.fraction) & f.expMax;
+            long sign = r.nextBoolean() ? 1 : 0;
+            int precision = f.fraction + 1;
+            switch (r.nextInt(9)) {
+                case 0: return new long[] {a, edge(f, r)};
+                case 1: return new long[] {a, r.nextLong() & f.mask()};
+                case 2: {
+                    long e = Math.max(1, Math.min(f.expMax - 1, exponent + r.nextInt(5) - 2));
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+                case 3: return new long[] {a, (f.negate(a) + r.nextInt(7) - 3) & f.mask()};
+                case 4: {
+                    long e = exponent - (precision - 3 + r.nextInt(8));
+                    if (e < 1) e = 1 + r.nextInt(3);
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+                case 5: {
+                    long e = Math.max(1, exponent - precision + r.nextInt(3));
+                    return new long[] {a, f.make(sign, e, r.nextInt(3) == 0 ? fraction(f, r) : (r.nextBoolean() ? 0 : 1))};
+                }
+                case 6: {
+                    long e = 1 + r.nextInt(3);
+                    return new long[] {f.make(sign, e, fraction(f, r)), f.make(sign ^ 1, e + r.nextInt(2), fraction(f, r))};
+                }
+                case 7: {
+                    long e = f.expMax - 1 - r.nextInt(2);
+                    return new long[] {f.make(sign, e, fraction(f, r)), f.make(sign, e - r.nextInt(3), fraction(f, r))};
+                }
+                default: {
+                    long e = Math.max(1, Math.min(f.expMax - 1, exponent - r.nextInt(2 * precision + 8)));
+                    return new long[] {a, f.make(sign, e, fraction(f, r))};
+                }
+            }
+        }
+
+        private static long[] mulPair(Fmt f, SplittableRandom r) {
+            long a = edge(f, r);
+            long sign = r.nextBoolean() ? 1 : 0;
+            switch (r.nextInt(7)) {
+                case 0: return new long[] {a, edge(f, r)};
+                case 1: return new long[] {a, r.nextLong() & f.mask()};
+                case 2: {
+                    long target = new long[] {-2, -1, 0, 1, 2, f.expMax - 3, f.expMax - 2, f.expMax - 1, f.expMax, f.expMax + 1}[r.nextInt(10)];
+                    long e1 = 1 + r.nextInt(f.expMax - 1);
+                    long e2 = target - e1 + f.bias;
+                    if (e2 < 1 || e2 > f.expMax - 1) return new long[] {a, edge(f, r)};
+                    return new long[] {f.make(sign, e1, fraction(f, r)), f.make(r.nextBoolean() ? 1 : 0, e2, fraction(f, r))};
+                }
+                case 3: {
+                    int total = f.fraction - 2 + r.nextInt(5);
+                    int t1 = Math.max(0, Math.min(f.fraction, r.nextInt(total + 1)));
+                    int t2 = Math.max(0, Math.min(f.fraction, total - t1));
+                    long m1 = ((r.nextLong() & f.fractionMask()) | 1L) << t1;
+                    long m2 = ((r.nextLong() & f.fractionMask()) | 1L) << t2;
+                    return new long[] {f.make(sign, f.bias + r.nextInt(7) - 3, m1), f.make(r.nextBoolean() ? 1 : 0, f.bias + r.nextInt(7) - 3, m2)};
+                }
+                case 4: {
+                    long fa = r.nextBoolean() ? 0 : (r.nextBoolean() ? 1 : f.fractionMask());
+                    long fb = r.nextBoolean() ? 0 : (r.nextBoolean() ? 1 : f.fractionMask());
+                    return new long[] {f.make(sign, 1 + r.nextInt(f.expMax - 1), fa), f.make(r.nextBoolean() ? 1 : 0, 1 + r.nextInt(f.expMax - 1), fb)};
+                }
+                case 5: return new long[] {f.make(sign, f.bias + r.nextInt(21) - 10, fraction(f, r)), f.make(r.nextBoolean() ? 1 : 0, f.bias + r.nextInt(21) - 10, fraction(f, r))};
+                default: return new long[] {a, a};
+            }
         }
     }
 
