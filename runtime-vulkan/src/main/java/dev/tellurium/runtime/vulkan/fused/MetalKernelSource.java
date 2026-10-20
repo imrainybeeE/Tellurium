@@ -46,7 +46,19 @@ public final class MetalKernelSource {
     static final String ARGUMENT_BUFFERS_SETTING = "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS";
     private static final int MSL_VERSION = 30100;
     private static final int EXECUTION_MODEL_GL_COMPUTE = 5;
-    private static final Pattern INLINED_HELPER = Pattern.compile("static inline __attribute__\\(\\(always_inline\\)\\)\\n(\\S+ wgf?_)");
+    /**
+     * The helpers that become calls (name prefixes): the large ones.  Measured on an Apple M3 (Overworld, SURFACE,
+     * GPU time per chunk): every helper a call 12.3 ms; these as calls and the small ones (comparisons, abs,
+     * negate, classification, 64-bit shifts) inlined 5.9 ms, with the kernels built in about 18 s; inlining add,
+     * sub, mul and floor as well made Metal's compiler run for more than ten minutes again.
+     * -Dtellurium.fast.metalCalls=prefix,prefix overrides the list, for measuring.
+     */
+    static final String DEFAULT_CALLS = "wg_fp64_div,wg_fp64_sqrt,wg_fp64_add,wg_fp64_sub,wg_fp64_mul,wg_fp64_lerp,wg_fp64_floor,"
+            + "wg_fp64_pack,wg_fp64_to_fp32,wg_fp64_from_int,wg_fp64_from_fp32,wg_fp32_add,wg_fp32_sub,wg_fp32_mul,wg_fp32_div,"
+            + "wg_fp32_sqrt,wg_fp32_pack,wg_fp32_from_int,wgf_";
+    private static final Pattern INLINED_HELPER = Pattern.compile("static inline __attribute__\\(\\(always_inline\\)\\)\\n(\\S+ ("
+            + String.join("|", java.util.Arrays.stream(System.getProperty("tellurium.fast.metalCalls", DEFAULT_CALLS).split(","))
+                    .map(String::trim).filter(p -> !p.isEmpty()).map(Pattern::quote).toList()) + ")[A-Za-z0-9_]*\\()");
 
     private MetalKernelSource() {}
 
@@ -121,7 +133,7 @@ public final class MetalKernelSource {
         check(spvc_compiler_msl_add_resource_binding(compiler, resource), "resource binding " + set + "/" + binding);
     }
 
-    /** The integer IEEE helpers become real calls; everything else keeps SPIRV-Cross's forced inlining. */
+    /** The large integer IEEE helpers become real calls; everything else keeps SPIRV-Cross's forced inlining. */
     static String callHelpers(String msl) {
         return INLINED_HELPER.matcher(msl).replaceAll("__attribute__((noinline))\n$1");
     }

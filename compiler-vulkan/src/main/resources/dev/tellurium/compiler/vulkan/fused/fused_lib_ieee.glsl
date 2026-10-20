@@ -18,6 +18,7 @@ const uvec2 D64_FIFTEEN = uvec2(0x00000000u, 0x402e0000u); // 15.0
 const uvec2 D64_SEVENTY = uvec2(0x00000000u, 0x40518000u); // 70.0
 const uvec2 D64_128 = uvec2(0x00000000u, 0x40600000u); // 128.0
 const uvec2 D64_WRAP = uvec2(0x00000000u, 0x41800000u); // 33554432.0
+const uvec2 D64_INV_WRAP = uvec2(0x00000000u, 0x3e600000u); // 2.9802322387695312E-8
 const uvec2 D64_SMEAR_EPSILON = uvec2(0xa0000000u, 0x3e7ad7f2u); // 1.0000000116860974E-7
 const uvec2 D64_NOISE_FACTOR = uvec2(0x6b8128feu, 0x3ff04a3fu); // 1.0181268882175227
 const uvec2 D64_BLEND_SCALE = uvec2(0xc6a7ef9eu, 0x4085634bu); // 684.412
@@ -173,8 +174,10 @@ uvec2 smoothstepd(uvec2 v) {
     return wg_fp64_mul(wg_fp64_mul(wg_fp64_mul(v, v), v),
             wg_fp64_add(wg_fp64_mul(v, wg_fp64_sub(wg_fp64_mul(v, D64_SIX), D64_FIFTEEN)), D64_TEN));
 }
+// v / 2^25 as v * 2^-25: both round the same exact value once, so they agree for every input (subnormal,
+// infinite and NaN results included), and the product costs a small fraction of the quotient.
 uvec2 wrapd(uvec2 v) {
-    return wg_fp64_sub(v, wg_fp64_mul(wg_fp64_floor(wg_fp64_add(wg_fp64_div(v, D64_WRAP), D64_HALF)), D64_WRAP));
+    return wg_fp64_sub(v, wg_fp64_mul(wg_fp64_floor(wg_fp64_add(wg_fp64_mul(v, D64_INV_WRAP), D64_HALF)), D64_WRAP));
 }
 
 int permAt(int base, int index) { return int(perm[base + (index & 255)]); }

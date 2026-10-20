@@ -46,7 +46,7 @@ class MetalKernelSourceTest {
     }
 
     @Test
-    void onlyTheIntegerHelpersBecomeCalls() {
+    void onlyTheLargeIntegerHelpersBecomeCalls() {
         String msl = """
                 static inline __attribute__((always_inline))
                 uint2 wg_fp64_add(thread const uint2& left, thread const uint2& right)
@@ -54,12 +54,15 @@ class MetalKernelSourceTest {
                 int wgf_fp64_to_i32_java(thread const uint2& d)
                 static inline __attribute__((always_inline))
                 uint2 jdiv(thread const uint2& a, thread const uint2& b)
+                static inline __attribute__((always_inline))
+                bool wg_fp64_less(thread const uint2& left, thread const uint2& right)
                 """;
         String result = MetalKernelSource.callHelpers(msl);
         assertTrue(result.contains("__attribute__((noinline))\nuint2 wg_fp64_add("));
         assertTrue(result.contains("__attribute__((noinline))\nint wgf_fp64_to_i32_java("));
         assertTrue(result.contains("static inline __attribute__((always_inline))\nuint2 jdiv("), "library functions stay inlined");
-        assertFalse(result.contains("always_inline))\nuint2 wg_"));
+        assertTrue(result.contains("static inline __attribute__((always_inline))\nbool wg_fp64_less("), "small helpers stay inlined");
+        assertFalse(result.contains("always_inline))\nuint2 wg_fp64_add("));
     }
 
     private static byte[] resource(String name) throws IOException {

@@ -96,9 +96,24 @@ public final class MetalFusedDevice implements FusedGpuBackend {
     @Override public boolean lost() { return lost; }
     @Override public String lostReason() { return lostReason; }
     @Override public void loseDeviceForTest(String reason) { lostReason = reason; lost = true; }
-    @Override public boolean profiling() { return false; }
+    /**
+     * Diagnostic (-Dtellurium.fast.profile=true): each kernel of a batch in a command buffer of its own, waited for, and
+     * the GPU time between Metal's GPUStartTime and GPUEndTime added up per kernel.  Batches no longer overlap.
+     */
+    static final boolean PROFILE = Boolean.getBoolean("tellurium.fast.profile");
+    private static final java.util.concurrent.atomic.AtomicLong[] PROFILE_NANOS = new java.util.concurrent.atomic.AtomicLong[FusedDispatchPlan.KERNEL_COUNT];
+    private static final java.util.concurrent.atomic.AtomicLong PROFILE_CHUNKS = new java.util.concurrent.atomic.AtomicLong();
+    static { for (int i = 0; i < PROFILE_NANOS.length; i++) PROFILE_NANOS[i] = new java.util.concurrent.atomic.AtomicLong(); }
+
+    @Override public boolean profiling() { return PROFILE; }
     @Override public boolean debugBuffers() { return DEBUG_BUFFERS; }
-    @Override public String profileSummary() { return "per-kernel profiling is not available on the Metal backend"; }
+    @Override public String profileSummary() {
+        long chunks = Math.max(1, PROFILE_CHUNKS.get());
+        StringBuilder out = new StringBuilder("chunks=" + PROFILE_CHUNKS.get() + " (GPU time)");
+        for (int i = 0; i < PROFILE_NANOS.length; i++) out.append(' ').append(FusedDispatchPlan.kernelName(i)).append('=')
+                .append(String.format(java.util.Locale.ROOT, "%.3f", PROFILE_NANOS[i].get() / 1e6 / chunks)).append("ms/chunk");
+        return out.toString();
+    }
 
     /** @throws IllegalArgumentException when the program is not of the IEEE_BITS dialect, the only one Apple GPUs can run */
     @Override
@@ -398,6 +413,10 @@ public final class MetalFusedDevice implements FusedGpuBackend {
                     steps.add(pipelines[kernel]);
                     stepGroups.add(FusedDispatchPlan.groups(threads[kernel]));
                 }
+                if (PROFILE) {
+                    profile(count, prelimCount, threads, order);
+                    return;
+                }
                 MemorySegment submitted;
                 try {
                     submitted = commit(new int[]{count, prelimCount}, bound, steps.toArray(MemorySegment[]::new),
@@ -413,6 +432,36 @@ public final class MetalFusedDevice implements FusedGpuBackend {
                 pending = true;
                 submittedNanos = System.nanoTime();
                 submissions.incrementAndGet();
+            }
+
+            /** One command buffer per kernel, each waited for and timed on the GPU; the slot is free again afterwards. */
+            private void profile(int count, int prelimCount, long[] threads, int[] order) {
+                for (int kernel : order) {
+                    if (threads[kernel] == 0) continue;
+                    MemorySegment one = commit(new int[]{count, prelimCount}, bound, new MemorySegment[]{pipelines[kernel]},
+                            new long[]{FusedDispatchPlan.groups(threads[kernel])});
+                    try {
+                        long start = System.nanoTime();
+                        while (!finished(one)) {
+                            if (FusedNoiseDevice.overdue(start, System.nanoTime(), FusedNoiseDevice.FENCE_TIMEOUT_NANOS)) {
+                                lostReason = "a profiled kernel did not finish";
+                                lost = true;
+                                throw new IllegalStateException(lostReason);
+                            }
+                            Thread.onSpinWait();
+                        }
+                        if (status(one) == STATUS_ERROR) {
+                            lostReason = "Metal command buffer failed: " + failure(one);
+                            lost = true;
+                            throw new IllegalStateException(lostReason);
+                        }
+                        double seconds = ObjC.real(one, "GPUEndTime") - ObjC.real(one, "GPUStartTime");
+                        PROFILE_NANOS[kernel].addAndGet((long) (seconds * 1e9));
+                    } finally {
+                        if (finished(one)) ObjC.release(one);
+                    }
+                }
+                PROFILE_CHUNKS.addAndGet(count);
             }
 
             @Override

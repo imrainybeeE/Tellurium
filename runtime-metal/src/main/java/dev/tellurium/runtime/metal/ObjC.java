@@ -122,6 +122,10 @@ final class ObjC {
         return (long) send(long.class, receiver, selector, args);
     }
 
+    static double real(MemorySegment receiver, String selector, Object... args) {
+        return (double) send(double.class, receiver, selector, args);
+    }
+
     static boolean flag(MemorySegment receiver, String selector, Object... args) {
         return (boolean) send(boolean.class, receiver, selector, args);
     }
@@ -184,6 +188,7 @@ final class ObjC {
         if (type == long.class) return ValueLayout.JAVA_LONG;
         if (type == int.class) return ValueLayout.JAVA_INT;
         if (type == boolean.class) return ValueLayout.JAVA_BOOLEAN;
+        if (type == double.class) return ValueLayout.JAVA_DOUBLE;
         throw new IllegalArgumentException("Unsupported message result " + type);
     }
 
