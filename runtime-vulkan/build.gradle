@@ -24,6 +24,12 @@ configurations.named('testRuntimeClasspath') {
     resolutionStrategy.eachDependency { if (it.requested.group == 'org.lwjgl') it.useVersion '3.4.1' }
 }
 
+// The fused-library shaders passed to shaderc are encoded on LWJGL's thread stack; with the fast helpers they are
+// larger than its 64 KB default, as the shipped runtime's configured stack allows.
+tasks.named('test') {
+    jvmArgs '-Dorg.lwjgl.system.stackSize=2048'
+}
+
 tasks.register('nativeDeviceProbe', JavaExec) {
     group = 'verification'
     description = 'Opt-in G0 probe: lists Vulkan devices with the properties, limits and extensions the integer profile needs.'
