@@ -54,6 +54,8 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     private final int queueFamily;
     private final String deviceName;
     private final NumericProfile numericProfile;
+    /** MoltenVK runs the emulated kernels from Metal source with the integer helpers as calls (MetalKernelSource). */
+    private final boolean metalSource;
     private final long commandPool;
     private final VkPhysicalDeviceMemoryProperties memoryProperties;
     private volatile boolean lost;
@@ -80,7 +82,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
     }
 
     private FusedNoiseDevice(VkInstance instance, VkPhysicalDevice physical, VkDevice device, VkQueue queue,
-                             int queueFamily, String deviceName, NumericProfile numericProfile, long commandPool,
+                             int queueFamily, String deviceName, NumericProfile numericProfile, boolean metalSource, long commandPool,
                              VkPhysicalDeviceMemoryProperties memoryProperties) {
         this.instance = instance;
         this.physical = physical;
@@ -89,6 +91,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
         this.queueFamily = queueFamily;
         this.deviceName = deviceName;
         this.numericProfile = numericProfile;
+        this.metalSource = metalSource;
         this.commandPool = commandPool;
         this.memoryProperties = memoryProperties;
     }
@@ -245,8 +248,14 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                 queues.get(0).sType$Default().queueFamilyIndex(bestFamily).pQueuePriorities(stack.floats(1.0f));
                 // shaderFloat64 only for the native dialect: the emulated one has no double in its kernels at all.
                 var enabled = VkPhysicalDeviceFeatures.calloc(stack).shaderFloat64(profile == NumericProfile.NATIVE_QUALIFIED).shaderInt64(true);
+                PointerBuffer deviceExtensions = dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(best, stack);
+                // A portability (MoltenVK) device builds the emulated kernels from Metal source: from SPIR-V, Metal's
+                // compiler inlines every integer helper and takes many minutes per kernel.
+                boolean metalSource = profile == NumericProfile.GPU_IEEE_BITS && deviceExtensions != null
+                        && !"false".equalsIgnoreCase(System.getProperty("tellurium.fast.metalSource", "").trim());
+                if (metalSource && MetalKernelSource.unsupportedReason() != null) throw new IllegalStateException(MetalKernelSource.unsupportedReason());
                 var deviceInfo = VkDeviceCreateInfo.calloc(stack).sType$Default().pQueueCreateInfos(queues).pEnabledFeatures(enabled)
-                        .ppEnabledExtensionNames(dev.tellurium.runtime.vulkan.VulkanPortability.deviceExtensionsToEnable(best, stack));
+                        .ppEnabledExtensionNames(deviceExtensions);
                 check(vkCreateDevice(best, deviceInfo, null, pointer), "vkCreateDevice");
                 VkDevice device = new VkDevice(pointer.get(0), best, deviceInfo);
                 long pool = VK_NULL_HANDLE;
@@ -261,7 +270,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                     pool = handle.get(0);
                     memory = VkPhysicalDeviceMemoryProperties.malloc();
                     vkGetPhysicalDeviceMemoryProperties(best, memory);
-                    return new FusedNoiseDevice(instance, best, device, queue, bestFamily, bestName, profile, pool, memory);
+                    return new FusedNoiseDevice(instance, best, device, queue, bestFamily, bestName, profile, metalSource, pool, memory);
                 } catch (Throwable failure) {
                     if (memory != null) memory.free();
                     if (pool != VK_NULL_HANDLE) vkDestroyCommandPool(device, pool, null);
@@ -425,10 +434,11 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                     long kernelStart = System.nanoTime();
                     byte[] spirv = compileGlsl(compiled.source(), KERNELS[k]);
                     if (numericProfile == NumericProfile.GPU_IEEE_BITS) requireNoFloatTypes(spirv, KERNELS[k]);
+                    byte[] moduleCode = metalSource ? MetalKernelSource.moduleCode(spirv) : spirv;
                     long shadercNanos = System.nanoTime() - kernelStart;
-                    ByteBuffer code = MemoryUtil.memAlloc(spirv.length);
+                    ByteBuffer code = MemoryUtil.memAlloc(moduleCode.length);
                     try {
-                        code.put(spirv).flip();
+                        code.put(moduleCode).flip();
                         check(vkCreateShaderModule(device, VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code), null, handle),
                                 "vkCreateShaderModule(" + KERNELS[k] + ")");
                     } finally {
@@ -436,7 +446,7 @@ public final class FusedNoiseDevice implements dev.tellurium.compiler.vulkan.fus
                     }
                     modules[k] = handle.get(0);
                     var stage = VkPipelineShaderStageCreateInfo.calloc(stack).sType$Default()
-                            .stage(VK_SHADER_STAGE_COMPUTE_BIT).module(modules[k]).pName(stack.UTF8("main"));
+                            .stage(VK_SHADER_STAGE_COMPUTE_BIT).module(modules[k]).pName(stack.UTF8(metalSource ? MetalKernelSource.ENTRY_POINT : "main"));
                     var info = VkComputePipelineCreateInfo.calloc(1, stack);
                     info.get(0).sType$Default().stage(stage).layout(pipelineLayout);
                     check(vkCreateComputePipelines(device, pipelineCache, info, null, handle), "vkCreateComputePipelines(" + KERNELS[k] + ")");

@@ -20,13 +20,14 @@ dependencies {
 
 apply from: rootProject.file('mod/sources.gradle')
 
-// The GPU runtime brings its own Vulkan and shaderc bindings (mod/gpu-runtime.gradle).  The pure modules' copies
+// The GPU runtime brings its own Vulkan, shaderc and SPIRV-Cross bindings (mod/gpu-runtime.gradle).  The pure modules' copies
 // (runtime-vulkan's LWJGL 3.3.3 with natives) stay off the run classpath, as they are off a real server's: LWJGL
 // looks its native libraries up through the parent class loader first, and an older libshaderc found there
 // breaks the runtime's newer bindings.
 configurations.named('runtimeClasspath') {
     exclude group: 'org.lwjgl', module: 'lwjgl-shaderc'
     exclude group: 'org.lwjgl', module: 'lwjgl-vulkan'
+    exclude group: 'org.lwjgl', module: 'lwjgl-spvc'
 }
 
 tasks.named('processResources') {

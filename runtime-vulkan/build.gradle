@@ -3,6 +3,8 @@ dependencies {
     implementation 'org.lwjgl:lwjgl'
     implementation 'org.lwjgl:lwjgl-vulkan'
     implementation 'org.lwjgl:lwjgl-shaderc'
+    // SPIRV-Cross: the emulated kernels go to MoltenVK as Metal source (MetalKernelSource).
+    implementation 'org.lwjgl:lwjgl-spvc'
     runtimeOnly 'org.lwjgl:lwjgl::natives-windows'
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-windows'
     runtimeOnly 'org.lwjgl:lwjgl::natives-linux'
@@ -11,6 +13,15 @@ dependencies {
     runtimeOnly 'org.lwjgl:lwjgl-shaderc::natives-macos-arm64'
     // Carries libMoltenVK.dylib, the Vulkan implementation on macOS.
     runtimeOnly 'org.lwjgl:lwjgl-vulkan::natives-macos-arm64'
+    runtimeOnly 'org.lwjgl:lwjgl-spvc::natives-macos-arm64'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc::natives-windows'
+    testRuntimeOnly 'org.lwjgl:lwjgl-spvc::natives-linux'
+}
+
+// The tests run on the LWJGL the 26.1.2 build bundles (mod/targets.gradle): the Metal-source conversion has to
+// match that MoltenVK's own SPIRV-Cross, and an older SPIRV-Cross changes what signed modulo means.
+configurations.named('testRuntimeClasspath') {
+    resolutionStrategy.eachDependency { if (it.requested.group == 'org.lwjgl') it.useVersion '3.4.1' }
 }
 
 tasks.register('nativeDeviceProbe', JavaExec) {

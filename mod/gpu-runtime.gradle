@@ -9,7 +9,7 @@
 // loader is child-first for classes only: LWJGL looks its native libraries up as resources, parent first, so
 // on a client the game's copy of a library can be the one found, and it has to match the bundled Java side.
 // A target with macos: true also carries the macOS arm64 natives (lwjgl-vulkan's holds MoltenVK, the Vulkan
-// implementation there); on Windows and Linux the system's Vulkan loader is used.
+// implementation there) and SPIRV-Cross; on Windows and Linux the system's Vulkan loader is used.
 def gpuTarget = gradle.ext.modTargets[project.name]
 def lwjgl = gpuTarget.lwjgl ?: '3.3.3'
 configurations { gpuRuntime { transitive = false } }
@@ -25,6 +25,9 @@ dependencies {
         gpuRuntime "org.lwjgl:lwjgl:$lwjgl:natives-macos-arm64"
         gpuRuntime "org.lwjgl:lwjgl-shaderc:$lwjgl:natives-macos-arm64"
         gpuRuntime "org.lwjgl:lwjgl-vulkan:$lwjgl:natives-macos-arm64"
+        // SPIRV-Cross, for the emulated kernels as Metal source (runtime-vulkan's MetalKernelSource).
+        gpuRuntime "org.lwjgl:lwjgl-spvc:$lwjgl"
+        gpuRuntime "org.lwjgl:lwjgl-spvc:$lwjgl:natives-macos-arm64"
     }
 }
 def gpuRuntimeDir = layout.buildDirectory.dir('generated/gpuRuntime')
