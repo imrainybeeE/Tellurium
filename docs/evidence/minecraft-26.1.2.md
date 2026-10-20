@@ -79,7 +79,7 @@ The fused kernels need 64-bit floats, and Apple GPUs have none. The kernel diale
 double and float operation exact 32-bit integer code (`IntegerIeeeEmitter` `wg_` helpers, `FusedIeeeHelpers`
 `wgf_` conversions, `FastIeeeHelpers` `wgx_` fast add, subtract and multiply). No floating-point type
 appears in the kernels. The native kernel text is unchanged: golden hashes over 10 fixtures
-(`KernelTextIdentityTest`). `jdiv` and `jsqrt` keep their guards and return the correctly rounded result of
+(`FusedNativeGoldenTest`, run on hosts with LF line ends) and the library hash (`KernelTextIdentityTest`). `jdiv` and `jsqrt` keep their guards and return the correctly rounded result of
 the helper.
 
 ### Device checks
@@ -88,9 +88,9 @@ All on the M3 GPU, all with 0 mismatches:
 
 | Check | Comparisons |
 | --- | --- |
-| Integer IEEE conformance | 1,829,120 |
+| Integer IEEE conformance (with `--host-nan-sign-agnostic`: 2 results differ from the host only in the sign of a NaN, which the kernels never observe; the strict raw-bit comparison is not passed on this host) | 1,829,120 |
 | Fused helpers | 15,009,242 |
-| Fused library, 42 functions | 9,480,096 |
+| Fused library, 42 functions (run before the library called the `wgx_` helpers; those have their own check, and the GPU digest runs cover the library as shipped) | 9,480,096 |
 | Fast add, subtract, multiply | 6,979,296 |
 
 ### Bugs found and fixed
@@ -98,7 +98,7 @@ All on the M3 GPU, all with 0 mismatches:
 | Bug | Effect | Fix |
 | --- | --- | --- |
 | `wg_fp32_pack` and `wg_fp64_pack` dropped the carry of a subnormal that rounds up to the smallest normal number | 5 of 1,000,056 vectors on the device; it changes the hash of every shader that embeds the helper library | carry kept |
-| End islands relied on Java's `int` overflow (vanilla's rings beyond about 370,000 blocks), and Metal may assume signed arithmetic does not overflow | Metal may assume that signed arithmetic does not overflow | the sum is formed in unsigned arithmetic |
+| End islands relied on Java's `int` overflow (vanilla's rings beyond about 370,000 blocks), and Metal may assume signed arithmetic does not overflow | 21 of 96 `endIsland` cases of the library check: the device skipped the bail Java takes | the sum is formed in unsigned arithmetic |
 
 ### MoltenVK findings
 
@@ -107,7 +107,8 @@ MoltenVK is Vulkan on Metal.
 - Its SPIRV-Cross declares every function `always_inline`. One emulated kernel took 1,062 s to become a
   pipeline.
 - Handing MoltenVK Metal source, with the large helpers as `noinline` calls, built the same kernel in 0.85 s
-  (`MetalKernelSource`). The conversion equals MoltenVK 1.4.2's own output byte for byte (a test resource).
+  (`MetalKernelSource`). For a kernel without helpers the conversion equals MoltenVK 1.4.2's own output byte for byte (a test resource);
+  with helpers it differs only in which functions are calls.
 - Metal-source modules then need Metal argument buffers off, set per instance with
   `VK_EXT_layer_settings`.
 - MoltenVK runs them with one thread per threadgroup: 31 of 32 SIMD lanes are idle.

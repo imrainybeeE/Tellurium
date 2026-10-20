@@ -28,7 +28,7 @@ later, Fabric API 0.155.3+26.1.2, Java 25 or later). NeoForge 26.1.2 is not port
 **Known limits**
 
 - 26.1.2 was run on one machine, an Apple M3 MacBook Air, and only with the GPU off (digests identical to
-  vanilla, 3 of 3 contexts at SURFACE and at CARVERS) or on the Metal GPU (178 of 178 chunks compared with
+  vanilla, 3 of 3 contexts at SURFACE and at CARVERS) or on the Metal GPU (178 of 178 chunks per dimension compared with
   vanilla, 3 of 3 digest rows). Not run: a GPU with 64-bit floats (the native 26.1.2 list is empty), Windows,
   Linux, another Apple GPU.
 - C2ME and zfastnoise must be disabled alongside Tellurium.

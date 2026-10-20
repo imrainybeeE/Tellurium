@@ -13,12 +13,12 @@ The v0.1 commands and evidence remain regression coverage. The 0.2.0 checkpoint 
 Run Gradle on JDK 25, with a JDK 21 installed as well (the pure modules and the 1.21.x builds compile with a Java 21 toolchain). The repository wrapper pins Gradle 9.4.0.
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot'
+$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\<jdk-25 folder>'
 .\gradlew.bat test build verifyArchitecture testReport --no-daemon
 python scripts/summarize-tests.py
 ```
 
-The Windows helper `scripts/check.ps1` finds a Java21 installation or accepts `-JavaHome`. It changes only its process environment.
+The Windows helper `scripts/check.ps1` finds a JDK 25 installation (Eclipse Adoptium) or accepts `-JavaHome`. It changes only its process environment.
 
 `test` and `testFast` run CPU tests. They do not launch Minecraft or exercise a physical GPU. Standard reports live under each module's `build/reports/tests/test`; the aggregate is `build/reports/tests/all`. The summary script reads the results of the library modules and of the mod's builds under `mod/targets`; it fails if no tests exist, any test failed, or a module that has tests (or the reference build, `neoforge-1211`) has no results.
 

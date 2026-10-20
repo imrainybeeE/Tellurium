@@ -21,8 +21,13 @@ Without PowerShell (macOS, Linux) and, for a host without a usable GPU, without 
 # (MODULE=<target>; BENCH_MAX_HEAP and BENCH_IN_FLIGHT change the defaults of -MaxHeap and -InFlight)
 MODULE=fabric-2612 bash scripts/bench-cps.sh -Status NOISE -RadiusChunks 45
 # Digests against serial vanilla with the GPU off and every CPU-side change on ("CPU only", not GPU evidence)
-MODULE=fabric-2612 CPU_ONLY=1 bash scripts/verify-fast-matrix.sh 45
-MODULE=fabric-2612 CPU_ONLY=1 bash scripts/verify-save-reopen.sh 45 vanilla
+# (the 26.1.2 runs recorded in docs/evidence/minecraft-26.1.2.md; ScalableLux in build/test-mods/fabric-2612/vanilla)
+MODULE=fabric-2612 MODS_ROOT=build/test-mods/fabric-2612 PREFIX=f2612- CPU_ONLY=1 STATUS=SURFACE \
+  ROWS="vanilla-overworld vanilla-nether vanilla-end" bash scripts/verify-fast-matrix.sh 45
+MODULE=fabric-2612 CPU_ONLY=1 STATUS=FULL bash scripts/verify-save-reopen.sh 45 fabric-2612/vanilla
+# The same rows with the GPU (forced) generating, on a Mac with the emulated kernels
+MODULE=fabric-2612 MODS_ROOT=build/test-mods/fabric-2612 PREFIX=f2612gpu- STATUS=SURFACE \
+  ROWS="vanilla-overworld vanilla-nether vanilla-end" bash scripts/verify-fast-matrix.sh 45
 # A Chunky pregeneration on an installed Fabric server: vanilla, tellurium, c2me or c2me-zfastnoise
 FABRIC_MC=26.1.2 bash scripts/compare-chunk-mods-fabric.sh tellurium 1000
 ```
@@ -67,13 +72,13 @@ $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\<jdk-25 folder>'
 python scripts/summarize-tests.py
 ```
 
-`scripts\check.ps1` still looks for a JDK 21 for the Gradle launcher; use the explicit form above.
+`scripts\check.ps1` finds a JDK 25 (Eclipse Adoptium) for the Gradle launcher, or takes `-JavaHome`.
 
 The default suite does not require a GPU or launch Minecraft. Aggregate HTML: `build/reports/tests/all/index.html`. Every module retains its own JUnit XML and HTML reports. Python is needed only for the convenience summary script.
 
 ## Run the staged-route diagnostics
 
-With JDK21 selected, run these from the repository root:
+With JDK 25 selected (and a JDK 21 installed), run these from the repository root:
 
 ```powershell
 # Deterministic CPU replay with a counted JSON report
