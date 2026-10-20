@@ -64,14 +64,18 @@ class FusedIeeeAssemblyTest {
         assertNotEquals(nativeCompiled.structureFingerprint(), ieee.structureFingerprint(), name);
     }
 
-    /** The parts in the order of the native text: header, the helpers they call, the conversions, the library, then what the compiler generates. */
+    /**
+     * The parts in the order of the native text: header, the helpers they call, the conversions, the fast helpers, the
+     * names K_CORNER and K_BLOCK map back to the plain helpers, the library, then what the compiler generates.
+     */
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
     void theIeeeSourceIsHeaderHelpersConversionsLibraryAndThenTheGeneratedText(String name, FusedFixtures.Fixture fixture) {
         String source = compileIeee(fixture).source();
         String library = FusedNoiseCompiler.ieeeLibrary();
         assertTrue(source.startsWith("#version 460\n#extension GL_ARB_gpu_shader_int64 : require\n// tellurium-fused-ieee-bits-v1\n"), name);
-        assertTrue(source.contains(FusedIeeeHelpers.source() + FastIeeeHelpers.source() + library + "\n"), name + ": the conversions, the fast helpers and the library follow the helpers");
+        assertTrue(source.contains(FusedIeeeHelpers.source() + FastIeeeHelpers.source() + FusedNoiseCompiler.PLAIN_HELPER_KERNELS + library + "\n"),
+                name + ": the conversions, the fast helpers, the plain-helper kernels' names and the library follow the helpers");
         int libraryAt = source.indexOf(library);
         assertEquals(libraryAt, source.lastIndexOf(library), name + ": the library is in the text once");
         assertTrue(source.indexOf("uvec2 wg_fp64_add(") < source.indexOf(FusedIeeeHelpers.source()), name);
@@ -132,5 +136,17 @@ class FusedIeeeAssemblyTest {
         Matcher match = FUNCTION_DECLARATION.matcher(text);
         while (match.find()) names.add(match.group(2));
         return new HashSet<>(names);
+    }
+
+    /** K_CORNER and K_BLOCK call the plain helpers: every fast name, and only those, maps to its wg_ counterpart there. */
+    @org.junit.jupiter.api.Test
+    void theTwoPlainHelperKernelsMapEveryFastNameToItsPlainHelper() {
+        String block = FusedNoiseCompiler.PLAIN_HELPER_KERNELS;
+        assertTrue(block.startsWith("#if defined(K_CORNER) || defined(K_BLOCK)\n") && block.endsWith("#endif\n"), block);
+        var defines = new java.util.ArrayList<String>();
+        for (String line : block.split("\n")) if (line.startsWith("#define ")) defines.add(line);
+        var expected = new java.util.ArrayList<String>();
+        for (String name : FastIeeeHelpers.NAMES) expected.add("#define " + name + " " + name.replace("wgx_", "wg_"));
+        org.junit.jupiter.api.Assertions.assertEquals(expected, defines);
     }
 }

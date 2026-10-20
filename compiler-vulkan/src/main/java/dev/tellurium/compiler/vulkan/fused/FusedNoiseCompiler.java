@@ -61,6 +61,18 @@ public final class FusedNoiseCompiler {
      */
     private static final Set<String> IEEE_ROOTS = ieeeRoots();
 
+    /**
+     * The kernels that call the plain wg_ add, sub and mul instead of the fast wgx_ ones (the names are mapped after
+     * the wgx_ definitions, so those keep theirs).  Both give identical results; this is speed only.  Measured on an
+     * Apple M3 (Overworld, SURFACE, GPU time per chunk, Metal with the large helpers as calls): the fast helpers
+     * took K_COLUMN from 0.48 to 0.35 ms, K_PRELIM from 0.52 to 0.42 and K_SURF_B from 1.08 to 0.67, but K_CORNER
+     * from 2.05 to 2.97 and K_BLOCK from 1.42 to 3.37.  Inlining the fast paths instead made the build too slow.
+     */
+    static final String PLAIN_HELPER_KERNELS = "#if defined(K_CORNER) || defined(K_BLOCK)\n"
+            + "#define wgx_fp64_add wg_fp64_add\n#define wgx_fp64_sub wg_fp64_sub\n#define wgx_fp64_mul wg_fp64_mul\n"
+            + "#define wgx_fp32_add wg_fp32_add\n#define wgx_fp32_sub wg_fp32_sub\n#define wgx_fp32_mul wg_fp32_mul\n"
+            + "#endif\n";
+
     private static Set<String> ieeeRoots() {
         var roots = new LinkedHashSet<String>();
         for (String name : List.of("div", "sqrt", "floor", "negate", "abs", "equal", "less", "less_equal",
@@ -74,6 +86,9 @@ public final class FusedNoiseCompiler {
         roots.add("wg_u64_shr_sticky");
         roots.add("wg_u64_shl");
         roots.add("wg_i64_negate");
+        // The plain sub of the kernels that keep the plain helpers (PLAIN_HELPER_KERNELS).
+        roots.add("wg_fp64_sub");
+        roots.add("wg_fp32_sub");
         roots.addAll(FusedIeeeHelpers.HELPERS);
         roots.addAll(FastIeeeHelpers.HELPERS);
         roots.addAll(FusedIeeeLibrary.HELPER_ROOTS);
@@ -332,7 +347,8 @@ public final class FusedNoiseCompiler {
             int surfaceHeader = request.surface() == null ? 0 : tables.surface(request.surface());
             boolean ieee = arith.dialect() == Dialect.IEEE_BITS;
             // The IEEE text is the native text's parts in the same order, preceded by the helpers they call.
-            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + FastIeeeHelpers.source() + ieeeLibraryText : library()) + "\n"
+            String source = header() + (ieee ? IntegerIeeeEmitter.helperSource(IEEE_ROOTS) + FusedIeeeHelpers.source() + FastIeeeHelpers.source()
+                    + PLAIN_HELPER_KERNELS + ieeeLibraryText : library()) + "\n"
                     + accessors() + FusedKernels.prelude(arith, geometry, request, beardKernelIndex) + FusedSurfaceKernels.constants(arith, geometry) + functions
                     + FusedKernels.kernels(arith, flats.size(), interps.size(), xzNodes.size(), request.fluidUpdates(), request.preliminarySurface())
                     + FusedSurfaceKernels.body(arith);
