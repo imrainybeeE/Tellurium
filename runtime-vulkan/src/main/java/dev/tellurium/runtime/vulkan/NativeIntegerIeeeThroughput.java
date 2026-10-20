@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 package dev.tellurium.runtime.vulkan;
 
+import dev.tellurium.compiler.vulkan.fused.FastIeeeHelpers;
 import dev.tellurium.compiler.vulkan.worldgen.IntegerIeeeEmitter;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -121,6 +122,18 @@ public final class NativeIntegerIeeeThroughput {
                 Set.of("wg_fp32_add"), Data.ADD32, null, "wg_fp32_add"));
         list.add(new Kernel("fp32.mul", "f32", 2, "x = wg_fp32_mul(x, a); x = wg_fp32_mul(x, b);",
                 Set.of("wg_fp32_mul"), Data.MUL32, null, "wg_fp32_mul"));
+        list.add(new Kernel("fp64.sub", "f64", 2, "x = wg_fp64_sub(x, a); x = wg_fp64_sub(x, b);",
+                Set.of("wg_fp64_sub"), Data.ADD64, null, "wg_fp64_sub"));
+        list.add(new Kernel("fp32.sub", "f32", 2, "x = wg_fp32_sub(x, a); x = wg_fp32_sub(x, b);",
+                Set.of("wg_fp32_sub"), Data.ADD32, null, "wg_fp32_sub"));
+        // The fast helpers of FastIeeeHelpers, on the same data and with the same host reference as the wg_ rows.
+        for (String op : List.of("add", "sub", "mul")) {
+            Data data64 = op.equals("mul") ? Data.MUL64 : Data.ADD64, data32 = op.equals("mul") ? Data.MUL32 : Data.ADD32;
+            list.add(new Kernel("fp64x." + op, "f64", 2, "x = wgx_fp64_" + op + "(x, a); x = wgx_fp64_" + op + "(x, b);",
+                    FastIeeeHelpers.HELPERS, data64, null, "wgx_fp64_" + op));
+            list.add(new Kernel("fp32x." + op, "f32", 2, "x = wgx_fp32_" + op + "(x, a); x = wgx_fp32_" + op + "(x, b);",
+                    FastIeeeHelpers.HELPERS, data32, null, "wgx_fp32_" + op));
+        }
         list.add(new Kernel("fp32.div", "f32", 2, "x = wg_fp32_div(x, a); x = wg_fp32_div(x, b);",
                 Set.of("wg_fp32_div"), Data.MUL32, null, "wg_fp32_div"));
         list.add(new Kernel("fp32.sqrt", "f32", 1,
@@ -230,15 +243,20 @@ public final class NativeIntegerIeeeThroughput {
 
     // ----------------------------------------------------------------- shader
 
+    /** A kernel of the fast {@code wgx_} helpers: its host reference is that of the {@code wg_} row of the same operation. */
+    private static boolean isFast(Kernel k) { return k.id.startsWith("fp64x.") || k.id.startsWith("fp32x."); }
+
     private static String shaderSource(Kernel k) {
         var s = new StringBuilder("#version 450\n");
         if (k.kind.equals("i64")) s.append("#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\n");
+        if (isFast(k)) s.append("#extension GL_ARB_gpu_shader_int64 : require\n");
         s.append("layout(local_size_x=").append(LOCAL).append(", local_size_y=1, local_size_z=1) in;\n")
                 .append("layout(std430, binding=0) readonly buffer Inputs { uint inb[]; };\n")
                 .append("layout(std430, binding=1) writeonly buffer Outputs { uint outb[]; };\n")
                 .append("layout(push_constant) uniform Dispatch { uint count; uint iters; } pc;\n")
                 .append("bool wg_failed;\n");
         if (!k.roots.isEmpty()) s.append(IntegerIeeeEmitter.helperSource(k.roots)).append('\n');
+        if (isFast(k)) s.append(FastIeeeHelpers.source()).append('\n');
         s.append("""
                 uvec2 wg_bench_reseed64(uvec2 x, uvec2 salt, uint exponentHi, uint signAllowed) {
                     uint h = (x.x ^ x.y) * 747796405u + salt.x;
@@ -448,7 +466,7 @@ public final class NativeIntegerIeeeThroughput {
 
     /** Host re-computation of one lane's two output words; null when no reference exists. */
     private static int[] reference(Kernel k, int[] w, int iters) {
-        String id = k.id;
+        String id = isFast(k) ? k.id.replace("x.", ".") : k.id;
         if (id.startsWith("calib.reseed64")) {
             long x = Double.doubleToRawLongBits(get64(w, 0)), salt = (w[2] & 0xffffffffL) | ((long) w[3] << 32);
             for (int i = 0; i < iters; i++) x = reseed64(x, salt, 0x40100000, 0x80000000)[0];
@@ -466,6 +484,7 @@ public final class NativeIntegerIeeeThroughput {
             for (int i = 0; i < iters; i++) {
                 switch (id) {
                     case "fp64.add" -> { x = x + a; x = x + b; }
+                    case "fp64.sub" -> { x = x - a; x = x - b; }
                     case "fp64.mul" -> { x = x * a; x = x * b; }
                     case "fp64.div" -> { x = x / a; x = x / b; }
                     case "fp64.lerp" -> { x = x + f * (a - x); x = x + f * (b - x); }
@@ -501,6 +520,7 @@ public final class NativeIntegerIeeeThroughput {
             for (int i = 0; i < iters; i++) {
                 switch (id) {
                     case "fp32.add" -> { x = x + a; x = x + b; }
+                    case "fp32.sub" -> { x = x - a; x = x - b; }
                     case "fp32.mul" -> { x = x * a; x = x * b; }
                     case "fp32.div" -> { x = x / a; x = x / b; }
                     case "fp32.sqrt" -> x = Float.intBitsToFloat(reseed32(Float.floatToRawIntBits((float) Math.sqrt(x)), salt, 0x3f800000, 0));
