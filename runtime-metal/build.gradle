@@ -1,0 +1,17 @@
+// The native Metal backend of the fused NOISE kernels (macOS).  It talks to Metal through java.lang.foreign, which
+// is final since Java 22, so this module (and only this one of the pure modules) is built for Java 25, the version the
+// 26.1 game runs on.  Nothing else depends on it: the mod bundles its jar next to runtime-vulkan's (mod/gpu-runtime.gradle).
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+tasks.withType(JavaCompile).configureEach { options.release = 25 }
+
+def nativeAccess = '--enable-native-access=ALL-UNNAMED'
+tasks.withType(Test).configureEach { jvmArgs nativeAccess }
+
+tasks.register('nativeMetalSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Opt-in real-device check of the Metal glue: builds compute pipelines from Metal source, dispatches 64-thread groups into shared buffers and verifies them on the host; fails when there is no Metal device.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs nativeAccess
+    mainClass = 'dev.tellurium.runtime.metal.NativeMetalSmoke'
+}

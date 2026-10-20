@@ -24,6 +24,7 @@ def moduleDependencies = [
     'chunk-engine':['semantic-core','material-codec','spatial-data'],
     'frontend-mc1211':['semantic-core'],
     'runtime-vulkan':['semantic-core','compiler-vulkan'],
+    'runtime-metal':['semantic-core','compiler-vulkan','runtime-vulkan'],
     'oracle-and-replay':['semantic-core','compiler-jvm','compiler-vulkan','material-codec','spatial-data','chunk-engine','frontend-mc1211','runtime-vulkan']
 ]
 // The builds of the mod (mod/targets.gradle) all use the same pure modules.
