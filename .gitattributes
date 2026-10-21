@@ -8,3 +8,5 @@ gradlew text eol=lf
 *.bat text eol=crlf
 *.glsl text eol=lf
 *.comp text eol=lf
+*.metal text eol=lf
+*.spv binary
